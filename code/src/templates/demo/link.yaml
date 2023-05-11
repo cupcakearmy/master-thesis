@@ -1,0 +1,25 @@
+apiVersion: iluzio.nicco.io/v1
+kind: Link
+metadata:
+  name: test-link
+spec:
+  from: a
+  to: b
+  # direction: uni
+  direction: bi
+  # bandwidth:
+  #   rate: 1kbps
+  #   # limit: 20971520
+  #   limit: 10000
+  #   buffer: 5000
+  # delay:
+  #   latency: 100ms
+  #   correlation: '0'
+  #   jitter: 50ms
+  # loss:
+  #   loss: '0.5'
+    # correlation: '100'
+  # duplicate:
+  #   duplicate: '1'
+  # corrupt:
+  #   corrupt: '1'

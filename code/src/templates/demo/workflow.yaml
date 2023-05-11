@@ -1,0 +1,47 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: test
+spec:
+  entry: entry
+  templates:
+    - name: entry
+      templateType: Serial
+      children:
+        - delay
+        - loss
+    - name: delay
+      templateType: NetworkChaos
+      networkChaos:
+        action: delay
+        selector:
+          namespaces:
+            - simulator
+        mode: all
+        target:
+          selector:
+            namespaces:
+              - simulator
+          mode: all
+        direction: both
+        delay:
+          latency: '90ms'
+          correlation: '25'
+          jitter: '1ms'
+    - name: loss
+      templateType: NetworkChaos
+      networkChaos:
+        action: delay
+        selector:
+          namespaces:
+            - simulator
+        mode: all
+        target:
+          selector:
+            namespaces:
+              - simulator
+          mode: all
+        direction: both
+        loss:
+          loss: '25'
+          correlation: '25'

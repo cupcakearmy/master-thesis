@@ -1,0 +1,81 @@
+# Simulation node with sidecar
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${id}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      node: ${id}
+  template:
+    metadata:
+      name: pod-${id}
+      labels:
+        node: ${id}
+    spec:
+      dnsPolicy: ClusterFirst
+      containers:
+        # Image
+        - name: app
+          image: ${image}
+          imagePullPolicy: Never
+          resources: ${resources}
+        # Sidecar
+        - name: sidecar
+          image: sidecar
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE
+              value: ${id}
+          resources: {}
+
+---
+# Service that makes other nodes discoverable to this node
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${id}
+spec:
+  clusterIP: None
+  selector:
+    receive-node-${id}: enabled
+
+---
+# This network policy is to deny all traffic from and to another namespace
+# https://github.com/ahmetb/kubernetes-network-policy-recipes/blob/master/04-deny-traffic-from-other-namespaces.md
+# Exceptions is traffic to and from kube-system namespace. This is needed for the DNS resolution of services.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ${id}
+spec:
+  podSelector:
+    matchLabels:
+      node: ${id}
+  ingress:
+    # Internal DNS
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+    # All the pods in the same namespace
+    - from:
+        - podSelector:
+            matchLabels:
+              send-node-${id}: enabled
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+    - to:
+        - podSelector:
+            matchLabels:
+              receive-node-${id}: enabled

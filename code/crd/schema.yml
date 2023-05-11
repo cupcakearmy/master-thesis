@@ -1,0 +1,16 @@
+# https://editor.swagger.io/
+
+# https://swagger.io/docs/specification/data-models/data-types/
+
+openapi: 3.0.3
+info:
+  title: Foo
+  version: 0.0.0
+paths: {}
+components:
+  schemas:
+    Scenario:
+      type: object
+      properties:
+        name:
+          type: string

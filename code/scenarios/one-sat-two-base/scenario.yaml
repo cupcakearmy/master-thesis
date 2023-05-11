@@ -1,0 +1,72 @@
+apiVersion: iluzio.nicco.io/v1
+kind: Scenario
+metadata:
+  name: sat-base
+spec:
+  events:
+    # Setup
+    - offset: 0
+      resource: node
+      action: create
+      id: base0
+      spec:
+        image: base-station
+        airGapped: false
+
+    - offset: 0
+      resource: node
+      action: create
+      id: base1
+      spec:
+        image: base-station
+
+    - offset: 0
+      resource: node
+      action: create
+      id: sat0
+      spec:
+        image: satellite
+
+    # Links
+    - offset: 15
+      resource: link
+      action: create
+      from: base0
+      to: sat0
+      direction: bi
+      spec:
+        bandwidth:
+          rate: 10mbps
+          limit: 2000000000
+          buffer: 200000
+
+    - offset: 45
+      resource: link
+      action: delete
+      from: base0
+      to: sat0
+      direction: bi
+
+    - offset: 30
+      resource: link
+      action: create
+      from: base1
+      to: sat0
+      direction: bi
+      spec:
+        bandwidth:
+          rate: 10mbps
+          limit: 2000000000
+          buffer: 200000
+
+    - offset: 60
+      resource: link
+      action: delete
+      from: base1
+      to: sat0
+      direction: bi
+
+    # End
+    - offset: 80
+      resource: scenario
+      action: end

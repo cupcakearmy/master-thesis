@@ -1,0 +1,78 @@
+\documentclass{tudscrreprt}
+
+% Basic
+\usepackage{hyperref}
+\usepackage{float}
+
+% Code Snippets
+\usepackage{minted}
+
+% Acronyms
+\usepackage{./lib/acronyms}
+
+% SI Units
+\usepackage[per-mode = symbol]{siunitx}
+
+\iftutex
+  \usepackage{fontspec}
+\else
+  \usepackage[T1]{fontenc}
+\fi
+
+% Images
+\usepackage{graphicx}
+\graphicspath{ {../images/} {../diagrams/} }
+
+% Bib
+\usepackage[backend=bibtex8, style=ieee]{biblatex}
+\addbibresource{./db.bib}
+
+% Dates
+\usepackage{datetime}
+
+% Symbol font
+\usepackage{bbding}
+
+% Requirements
+\usepackage{./lib/requirements}
+\reqinit
+
+\begin{document}
+
+\input{lib/metadata.sty}
+
+\chapter*{Statement of Authorship}
+
+I hereby declare that I have written this paper independently and have not used any sources or aids apart from those indicated.
+I am submitting it for the first time as an examination performance.
+Furthermore, I am aware that attempted cheating will be penalized with a grade of “insufficient” (5.0) and, if repeated, may lead to exclusion from further examinations.
+\\\\
+Dresden — \today
+
+\clearpage
+
+\setcounter{tocdepth}{1}
+\tableofcontents
+
+\input{chapters/introduction.tex}
+\input{chapters/fundamentals.tex}
+\input{chapters/requirements.tex}
+\input{chapters/related-work.tex}
+\input{chapters/concept.tex}
+\input{chapters/implementation.tex}
+\input{chapters/evaluation.tex}
+\input{chapters/documentation.tex}
+\input{chapters/summary.tex}
+
+\printacronyms
+
+\begin{appendix}
+  \listoffigures
+  \listoftables
+  \renewcommand\listoflistingscaption{List of source codes}
+  \listoflistings
+\end{appendix}
+
+\printbibliography
+
+\end{document}

@@ -1,0 +1,82 @@
+# Scenario
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: scenarios.iluzio.nicco.io
+spec:
+  scope: Namespaced
+  group: iluzio.nicco.io
+  names:
+    kind: Scenario
+    plural: scenarios
+    singular: scenario
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+
+---
+# Node
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: nodes.iluzio.nicco.io
+spec:
+  scope: Namespaced
+  group: iluzio.nicco.io
+  names:
+    kind: Node
+    plural: nodes
+    singular: node
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+
+---
+# Link
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: links.iluzio.nicco.io
+spec:
+  scope: Namespaced
+  group: iluzio.nicco.io
+  names:
+    kind: Link
+    plural: links
+    singular: link
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true

@@ -1,0 +1,19 @@
+kind: NetworkChaos
+apiVersion: chaos-mesh.org/v1alpha1
+metadata:
+  name: ${name}
+spec:
+  selector:
+    namespaces:
+      - ${namespace}
+    labelSelectors:
+      node: ${sender}
+  mode: all
+  target:
+    selector:
+      namespaces:
+        - ${namespace}
+      labelSelectors:
+        node: ${receiver}
+    mode: all
+  direction: ${direction}

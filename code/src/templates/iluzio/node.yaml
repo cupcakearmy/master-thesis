@@ -1,0 +1,5 @@
+apiVersion: iluzio.nicco.io/v1
+kind: Node
+metadata:
+  name: ${id}
+spec: {}

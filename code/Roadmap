@@ -1,0 +1,10 @@
+First:
+  - api driven
+  - 2 nodes
+  - sidecar communication
+  - block connections with network policies
+  - ping each other
+
+Second:
+  - crd driven
+  - kopf as operator

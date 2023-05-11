@@ -1,0 +1,25 @@
+kind: NetworkChaos
+apiVersion: chaos-mesh.org/v1alpha1
+metadata:
+  namespace: simulator
+  name: band-b
+spec:
+  selector:
+    namespaces:
+      - simulator
+    labelSelectors:
+      node: a
+  mode: all
+  action: bandwidth
+  bandwidth:
+    rate: 10gbps
+    limit: 2000000000
+    buffer: 1500
+  direction: both
+  target:
+    selector:
+      namespaces:
+        - simulator
+      labelSelectors:
+        node: b
+    mode: all

@@ -1,0 +1,55 @@
+\chapter{Documentation}
+\label{chapter:documentation}
+
+\section{Requirements}
+\label{section:requirements}
+
+The Simulator requires a few dependencies to run.
+Firstly, it requires a Kubernetes cluster which the user has access to. This cluster has to support NetworkPolicies, which generally requires a \ac{cni} plugin that supports NetworkPolicies. The simulator has been tested with the following \ac{cni}: \verb|calico|.
+
+Secondly, the cluster needs to have Chaos Mesh available and installed. The simulator has been tested with Chaos Mesh version \verb|2.5.1|. For more information on how to install Chaos Mesh, please refer to the official documentation\footnote{\url{https://chaos-mesh.org/docs/quick-start/}}.
+
+\section{Quick Start}
+
+For running the simulator locally, minikube\footnote{\url{https://minikube.sigs.k8s.io/docs/}} is required. Minikube is a tool that makes it easy to run a local Kubernetes cluster. It is available for Linux, macOS, and Windows. The user is required to have a Container or VM manager available, such as Docker or VirtualBox. For more details on how to install minikube, please refer to the official documentation\footnote{\url{https://minikube.sigs.k8s.io/docs/start/}}.
+
+In addition to minikube, another tool called Poetry\footnote{\url{https://python-poetry.org/}} is required. Poetry is a tool for dependency management for python, and will take care of installing all required dependencies for the simulator. For more details on how to install Poetry, please refer to the official documentation\footnote{\url{https://python-poetry.org/docs/\#installation}}.
+
+Once minikube and poetry are installed, the user can start a local cluster by running the following command:
+
+\begin{minted}{bash}
+make start
+\end{minted}
+
+This will execute a few bootstrap scripts that will install the required dependencies and start the local cluster. This process might take multiple minutes.
+
+\begin{enumerate}
+  \item Create a minikube cluster with Calico as \ac{cni}.
+  \item Create a namespace \verb|simulator| to scope all resources.
+  \item Install Chaos Mesh.
+  \item Install the CRDs of the simulator.
+  \item Build the docker images of the simulator inside the cluster.
+  \item Open the dashboard of the cluster and Chaos Mesh.
+\end{enumerate}
+
+Once the cluster has been created and the dashboards are running, the operator can be started by running the following command:
+
+\begin{minted}{bash}
+make operator-up
+\end{minted}
+
+This will install all the poetry dependencies and start the operator. The operator will start listening for new scenarios and will start executing them.
+
+\section{Run an example scenario}
+
+To run an example scenario, we can use one provided in the \verb|examples| folder. First, the cluster is created, and the operator started. After that, the \verb|run.sh| script can be executed, which will build the docker images of the scenario and afterward apply the scenario resource to the cluster.
+
+As mentioned in the previous chapter, it is recommended to change the DNS TTL time to a lower value.
+
+\begin{minted}{bash}
+make start
+make operator-up
+
+cd scenarios/one-sat-two-base
+./run.sh
+\end{minted}

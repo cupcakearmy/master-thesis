@@ -1,0 +1,7 @@
+\chapter{Summary}
+
+The central scope of this work was to architect and implement a simulator tailored, but not strictly limited, to DTN networks. Additionally, the emphasis was made on extensibility and flexibility of the simulator to allow for contrived scenarios, which often are the reality in the field of DTN networks. The simulator should be agnostic to programming, languages and protocols, enabling the user full freedom to implement their own custom logic, while taking care of the orchestration and communication between the communicating parties.
+
+Most of the goals were achieved, creating a tool that is flexible and extensible, that lives natively inside the Kubernetes ecosystem, taking advantage of the software already available in that space. Being natively integrated into Kubernetes allows to easily create bridges between the simulated, isolated "world" and real running applications or nodes. Being built on open standards set by Kubernetes, the simulator should stand the test of time and profit from the continuous additions and improvements to and in the Kubernetes ecosystem.
+
+While there are some shortcomings that could be improved, the simulator is in a state where it can be used to simulate DTN networks and is a good starting point for further development. The simulator is open source and will be available on GitHub\footnote{\url{https://github.com/cupcakearmy/iluzio}}, where it can be used and extended by anyone.

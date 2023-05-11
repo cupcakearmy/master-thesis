@@ -1,0 +1,16 @@
+{
+  "folders": [
+    {
+      "path": "code"
+    },
+    {
+      "path": "thesis"
+    },
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "cSpell.words": ["apiextensions", "iluzio", "nicco"]
+  }
+}

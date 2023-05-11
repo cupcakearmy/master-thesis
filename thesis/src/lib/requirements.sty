@@ -1,0 +1,20 @@
+% Copied from: https://ghost.tweakblogs.net/blog/720/requirement-list-in-latex.html
+
+\newcommand{\reqitem}[1]{
+    $R_{#1}$
+}
+
+\newcommand{\reqinit}{
+    \newcounter{reqcountbackup}
+    \newcounter{reqcount}
+    \renewcommand{\thereqcount}{\reqitem{\arabic{reqcount}}}
+}
+
+\newcommand{\reqlist}[1]{
+    \begin{list}{\thereqcount}{\usecounter{reqcount}}
+        \setcounter{reqcount}{\value{reqcountbackup}}
+        #1
+        \setcounter{reqcountbackup}{\value{reqcount}}
+    \end{list}
+}
+

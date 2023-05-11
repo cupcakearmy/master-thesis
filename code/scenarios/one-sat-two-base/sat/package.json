@@ -1,0 +1,7 @@
+{
+  "main": "./index.js",
+  "type": "module",
+  "dependencies": {
+    "pino": "^8.11.0"
+  }
+}

@@ -1,0 +1,33 @@
+\chapter{Fundamentals}
+
+In this chapter, the theoretical background of the topic will be discussed.
+
+\section{Delay / Disruption-Tolerant Networking}
+
+\ac{dtn} emerged in the early days of space exploration and became an apparent problem that needed to be tackled before launching the first satellites into orbit. While space is still the main area of interest for \ac{dtn}, it also has applications in other areas such as disaster and emergency response where infrastructure might be damaged or destroyed.
+
+\ac{dtn} is an alternative approach to traditional computer networking protocols. \ac{dtn} focuses on allowing communication to happen between nodes in a loosely connected and every changing topology of the network. The idea is that the network does not follow a fixed topology, but rather a network that is changing over time.
+These changes can be predictable, periodic, or chaotic and no assumptions are being made about the stability or reliability of links between nodes.
+
+Most \ac{dtn} protocols rely on some form of store and forward routing, where the messages are not immediately passed on to the next node, but rather stored in a queue. This is due to the availability of the next node, which is not always known and can vary substantially.
+Within the store and forward family of routing protocols, there is a distinction between protocols that replicate data and those who only forward information onward.
+This is in stark contrast to the commonly used TCP and UDP protocols, where non-availability / reachability of the next node leads to degradation of service, as those protocols require a steady connection between the two communicating nodes to ensure correct functioning. See \ref{fig:dtn-vs-tcp} for a simplified visual comparison.
+
+\begin{figure}[h]
+  \label{fig:dtn-vs-tcp}
+  \caption{Simplified message delivery comparison between DTN and TCP}
+  \centering
+  \includegraphics[width=0.75\textwidth]{dtn-vs-tcp.png}
+\end{figure}
+
+\section{Simulator}
+
+Simulators are a tool that enable us to mimic certain environment and behaviours to match another set of environment, often, the real-world. A simulator has two parts: the environment; and the agent that interacts with said environment.
+The goal of a simulation is to replicate the target environment as close and accurate as possible. As a result of that, we can say that the perfect simulator is the one where the agent acting inside it cannot differentiate between real and simulated “worlds”. They become indistinguishable from another.
+
+A perfect simulation is very hard, if not impossible, therefore most simulators generally pick important features that are relevant to the application and try to mimic those as good as possible.
+
+Another significant factor is the resolution or quality of a simulation. A simulator is only useful if it can emulate a said environment with less effort and/or cost. Otherwise, it would be easier to not use it.
+
+Simulators that are realised with computers have another very useful benefit for scientific work. As computer programs tend to be deterministic, simulators can inherit this property. Deterministic simulation are repeatable and therefore are adequate tools for comparing and measuring improvements or differences between different agents, leaving the "noise" and randomness out of the results, making them much more actionable and meaningful.
+

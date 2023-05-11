@@ -1,0 +1,147 @@
+
+\chapter{Analysis of requirements}
+
+\section{Properties for a simulator}
+
+For evaluating different simulator frameworks, we need to first define what criteria we want to consider and weigh the importance accordingly. Below is a short list of criteria that we will use to evaluate the quality of a simulator.
+
+\begin{itemize}
+  \item Routing
+  \item Modelling
+  \item Support for real-world protocols
+  \item Reporting
+  \item Extensibility
+  \item Documentation
+  \item Configuration
+\end{itemize}
+
+\subsection{Routing}
+
+A good simulation framework should include basic routing algorithms for \ac{dtn}.
+Examples might be Epidemic Routing, Flooding Routing, PRoPHET, MaxProp, RAPID, Spray and Wait, Bubble Rap Protocol, CafRep, RACOD. Furthermore it should be easy to add new or custom routing algorithms as needed.
+
+\subsection{Modelling}
+
+As \ac{dtn} covers a broad spectrum of possible applications and use cases, the resulting simulated network topologies can be predictable, dynamic, or sometimes chaotic.
+Modelling this changing network structure is essential. This includes opportunistic and predefined links between nodes. They can be of periodic nature, randomized or anything in between.
+
+One example would be modelling orbiting satellites, where the links are periodically broken and restored predictably. An example for an opportunistic topology would be modelling random ships in the ocean that need to communicate with each other, where the next link or node is not predictable.
+
+\subsection{Support for real-world protocols}
+
+Support for standards like the \ac{bp} V7 and the underlying convergence layers like \ac{tcp}, \ac{udp} or \ac{ltp} is desirable.
+
+\subsection{Reporting}
+
+Good reporting, meaning the ability to extract data and metrics from a given simulation, is key to process and comparing data further between different simulation runs and models in order to compare and improve the simulation.
+
+This means that generally it is required that data can be exported in a machine-readable format such as csv, json or other formats that are easy to process further.
+
+\subsection{Extendibility}
+
+A good simulator would allow for extendibility and therefore the ability to customize every aspect of the simulation to the needs of the user.
+
+\subsection{Documentation}
+
+The quality of documentation determines the barrier of entry for new users. Ideally, extensive documentation and examples are available so that writing simulations is intuitive and easy.
+
+\subsection{Configuration}
+
+Naturally, there is a need to define simulation scenarios. This means that a user needs to somehow specify the topology and all the parameters for links, nodes, etc. to satisfy the constrains of a given scenario. This can be done by configuration files in a declarative manner, or programmatically. In either case, it is desirable that this happens in a concise and intuitive way that is easy to understand and create.
+
+In order to derive requirements, we will look at some use cases. By analysing the single components and behaviour within a potential simulation, requirements can be inferred and formulated.
+
+We will look at two example scenarios and
+
+\section{Scenarios}
+\label{section:scenarios}
+
+\subsubsection{Simulation of satellite constellation}
+
+A simulation that involves a group of satellites will have different satellites talking to each other. The connections will have a periodic connection, as orbits are predefined and encounters follow a structure that can be forecasted. Also, communication between satellites is homogenous, meaning that all links have the same quality, if present.
+
+More concretely, we could, for example, imagine a constellation of 8 satellites orbiting around the earth at the speed. Each satellite is identical to the others in terms of capabilities. They have predefined orbits and therefore encounter each other at predefined times. In this case, we could assume that each satellite has a bandwidth of \SI{50}{\kibi\byte\per\second} and encounters another satellite every \SI{30}{\minute}.
+So for any given satellite, it would mean that there is a window every \SI{30}{\minute} of \SI{30}{\second} to exchange packets with the other satellite. Each link would have a packet lost rate of \SI{2}{\percent}.
+
+\subsubsection{Simulation of satellite ground station connections}
+\label{sim-sat-ground}
+
+If we look at a single satellite talking to ground stations while orbiting a planet, we can again see that we want to simulate periodic encounters. However, the links may have different qualities, depending on the ground station. This might have different reasons such as inclination, radar size and power at the ground station. In this case, we need to model different types of links, each with unique properties.
+
+An example would to be to look at a communication satellite like the Iridium constellation\footnote{\url{https://en.wikipedia.org/wiki/Iridium_satellite_constellation}} orbiting at \SI{\approx27000}{\km\per\hour} at an altitude of \SI{\approx781}{\km}. This would yield an orbital period of \SI{\approx100}{\minute}.
+We can add two ground stations, one with a better antenna and another with a smaller one. Each with different bandwidths, latencies, packet loss and duration of a single connection.
+
+\begin{table}[h!]
+  \centering
+  \begin{tabular}{|c c c c c|}
+    \hline
+    Ground Station & Bandwidth                     & Latency       & Packet Loss      & Duration         \\
+    \hline\hline
+    A              & \SI{3}{\kibi\byte\per\second} & \SI{800}{\ms} & \SI{2}{\percent} & \SI{10}{\minute} \\
+    B              & \SI{500}{\byte\per\second}    & \SI{800}{\ms} & \SI{3}{\percent} & \SI{7}{\minute}  \\
+    \hline
+  \end{tabular}
+  \caption{Ground stations \ref{sim-sat-ground}}
+  \label{table:sim-sat-ground}
+\end{table}
+
+\subsubsection{Simulation of sea traffic}
+\label{sim-sea-traffic}
+
+A scenario might also involve communication between different ships. While some ships might follow predefined routes, others follow a random path, taking unpredictable paths that lead to random encounters between the ships at sea. Also, having different equipment at its disposal for communication between different classes of ships might lead to inconsistent link qualities.
+
+For instance, one could consider simulating a section of the Aegean Sea\footnote{\url{https://en.wikipedia.org/wiki/Aegean_Sea}}, where there are a lot of islands and private boat traffic that is unpredictable. Different ship types, from small fishing vessels, recreational boats to bigger cruising ships. While recreational boats might only have rudimentary communication equipment, bigger ships might be better equipped. Let's imagine we have 3 different connections types depending on the communicating parties.
+
+\begin{table}[h!]
+  \centering
+  \begin{tabular}{|c c c c|}
+    \hline
+    Link Type & Bandwidth                      & Latency       & Packet Loss      \\
+    \hline\hline
+    A         & \SI{50}{\kibi\byte\per\second} & \SI{100}{\ms} & \SI{3}{\percent} \\
+    B         & \SI{1}{\mebi\byte\per\second}  & \SI{50}{\ms}  & \SI{2}{\percent} \\
+    C         & \SI{50}{\mebi\byte\per\second} & \SI{20}{\ms}  & \SI{1}{\percent} \\
+    \hline
+  \end{tabular}
+  \caption{Communication types for Sea Simulation \ref{sim-sea-traffic}}
+  \label{table:sim-sea-traffic-types}
+\end{table}
+
+We can assume a total of 10 ships for each connection type, for a total of 30, that encounter another ship at a random interval between \SI{1}{\minute} and \SI{5}{\minute}.
+
+\section{Requirements}
+
+From the scenarios above, we can derive some key requirements we want to fulfil for our project.
+
+
+\noindent\textit{Runtime}
+
+\reqlist{
+  \item The simulator should be implemented as a Kubernetes Operator \footnote{\href{https://kubernetes.io/docs/concepts/extend-kubernetes/operator/}{Kubernetes Operator}}
+  \item The simulator will orchestrate the creation and deletion of nodes.
+  \item The simulator will orchestrate the creation and deletion of network links between nodes.
+}
+
+\noindent\textit{Configuration}
+
+\reqlist{
+  \item The configuration file should be a plain text file.
+  \item The configuration file should contain a set of events which the simlulator can act upon.
+  \item The set of events should be specified in a imperative, procedural manner.
+}
+
+\noindent\textit{Events}
+
+\reqlist{
+  \item An event can create or destroy a node.
+  \item An event can create, destroy or modify a link.
+  \item A link can have the following properties: ${bandwidth, latency, packet loss, jitter}$ \ref{table:properties-link}
+}
+
+\noindent\textit{Scenario}
+
+\reqlist{
+  \item It should be possible to create scenarios with periodic encounters of nodes.
+  \item It should be possible to create links with different properties across different nodes.
+  \item Scenarios should be deterministic and therefore repeatable.
+}

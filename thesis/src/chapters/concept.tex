@@ -1,0 +1,238 @@
+\chapter{Concept}
+
+This chapter will focus on the general concept and structure of the simulator and its subcomponents.
+
+\section{General Overview}
+
+At the most basic level, the simulator is split in two parts: controller and nodes.
+
+The controller \ref{sim-controller} is the brain of the simulator and takes charge of all the logic, the simulation, node orchestration, logging and everything that the simulation needs to run.
+Scenarios, Nodes \ref{sim-node} and Links \ref{sim-link} on the other hand, "exist" for the time they are running or needed. The creation, administration, and deletion of those components is taken care of by the controller.
+The goal of Nodes is to be framework and language agnostic in order to retain as much flexibility as possible and not limit the user in what interfaces the simulator expects.
+
+\begin{figure}[h]
+  \label{fig:concept-overview}
+  \caption{Architecture overview}
+  \centering
+  \includegraphics[width=0.75\textwidth]{Overview.pdf}
+\end{figure}
+
+\section{Components of the simulator}
+
+\subsection{Controller \label{sim-controller}}
+
+The controller is the brain of the simulator and keeps track of what actions need to be undertaken.
+The basic principles of the simulator are events \ref{sim-event}.
+These are the actions that modify a given scenario (e.g. creating a new node, editing link properties, etc.).
+The controller also accepts a configuration file which has predefined events defined in it.
+A configuration file is enough to run any kind of simulation and should be the preferred way to create a simulation. The API is exposed for the purpose of making the tool more extendible. Every event that is available in the configuration file should also be available through the API, making them feature complete and identical.
+
+The simulation controller is modelled as a Kubernetes Operator\footnote{\url{https://kubernetes.io/docs/concepts/extend-kubernetes/operator/}}. Operators extend Kubernetes controllers such that every operator is a controller, but not the other way around. Operators are meant to complete domain specific operations that could not be achieved with general purpose tools inside of Kubernetes. Often this takes the form of automated operation of components, as this is the case for this work.
+
+The operator should control each component of the simulation, such as nodes, links, and events and their respective lifecycles. By doing so, it will manage the execution of a given simulation and gather information about said simulation.
+
+\subsection{Scenario \label{sim-scenario}}
+
+A Scenario is the collection of all information the simulator needs to run a given simulation. It describes the sequence of everything that needs to happen inside a given simulation, or Scenario.
+
+In this case, a Scenario is a collection of simulation nodes and events. They describe a simulation run through a series of events with which they can create, modify or delete nodes and links.
+
+The Scenario is the only information needed for the controller to run a simulation. This is what a user would create and pass to the controller. The rest should be taken care by the controller and orchestrate all single items inside the scenario.
+
+\subsection{Node \label{sim-node}}
+
+A node (of the simulation, not Kubernetes) is defined as the smallest unit of communication. It can receive or send data from other nodes. A node can be dynamically created or removed from a given scenario at any moment by events. A node can have any number of links $l \in \mathbf{N}$ to other nodes inside a scenario.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{ l|l }
+    \label{table:properties-node}
+    Property & Overview                                               \\
+    \hline
+    ID       & Uniquely identifying string for the node               \\
+    Image    & A container image that will be used for the given node \\
+    Memory   & The amount of computer memory available to the node    \\
+    Storage  & The amount of storage available to the node            \\
+    CPU      & The amount of CPU resources available to the node      \\
+  \end{tabular}
+  \caption{Node Properties}
+\end{table}
+
+% TODO: Review
+
+The node ID has to be unique, as it is used to reference it inside the scenario for adding links for example. As, they are also internally used to structure the various Kubernetes resources required by a node. IDs are required to be a valid DNS subdomain names, as specified by Kubernetes\footnote{\url{https://kubernetes.io/docs/concepts/overview/working-with-objects/names/\#dns-subdomain-names}} and the referenced RFC \cite{RFC1123}.
+
+The image is a user provided image, speficically a Docker image, but more generally an \ac{oci} image\footnote{\url{https://github.com/opencontainers/image-spec/blob/main/spec.md}}. This image provides the user code to the simulator. Each node can run a separate image and is provided with a runtime dictated by the specified properties.
+
+The memory, storage, and CPU fields are properties to limit the compute power of a given system. They map natively to Kubernetes resource management\footnote{\url{https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/\#resource-units-in-kubernetes}}. For the CPU, a unit called \textit{millicpu}s is used, which represents a per mill unit on a thread. Memory is simply specified by a number followed by a unit, as is the storage.
+
+\begin{figure}[H]
+  \label{fig:nodes-overview}
+  \caption{Node overview}
+  \centering
+  \includegraphics[width=0.9\textwidth]{Node.pdf}
+\end{figure}
+
+A simulation node it not to be confused with a Kubernetes Node\footnote{\url{https://kubernetes.io/docs/concepts/architecture/nodes/}}. Each simulation node maps to a Kubernetes Pod, the smallest available unit in Kubernetes. Pods can contain multiple containers inside of it, which share the same resources and lifecycle. Shared resources include storage and network.
+In this work, the Pod will include two containers: The image provided by the user for the simulation and a second container provided automatically as a Sidecar pattern\cite{azure-sidecar} by the controller.
+More details on the Sidecar container are explained later on\ref{sim-link}.
+
+\subsubsection{Node Discovery}
+
+Each node that wants to communicate with another party needs some kind of discovery mechanism. As communication partners are dynamic, meaning they can appear and cease to exist at any moment, a static configuration of our simulation node is not a viable solution.
+
+While static discovery could be defined at a configuration level, dynamic configuration requires more sophisticated methods that require runtime interaction, either in the simulator or in the container. As every node will need to implement discovery, the aim is to provide this functionality "out of the box" in order to keep simulation images uncluttered and agnostic to the discovery method used.
+The following solutions were considered to achieve dynamic node discovery at runtime:
+
+\begin{enumerate}
+  \item Kubernetes Service\footnote{\url{https://kubernetes.io/docs/concepts/services-networking/service/}} \& environment variables\footnote{\url{https://en.wikipedia.org/wiki/Environment_variable}}
+  \item Sidecar container
+\end{enumerate}
+
+The first option would leverage native Kubernetes Services and a configured env variable for the container. The environment variable would contain the name of the Service.
+
+Kubernetes natively supports similar functionality at it's core, called Services. Generally they are used to load-balance, often in a round-robin fashion, making multiple Pods available to other nodes. In practice, this is implemented using \ac{dns} that returns a single, changing \ac{ip} address belonging to one of the Pods inside that service. While in most scenarios this is quite desirable, in this case the behaviour needs to be modified, as all the communication nodes should be reachable simultaneously instead of routing to a single pod addressed by such service.
+
+If unchanged, this would mean that the image provided to the simulator would resolve DNS on its own, given the service address via an environment variable. While virtually all operating systems and therefore container images are capable of doing so, it is not certain how long the resolved values are cached. This could lead to undesired behaviour and is therefore not the preferred solution. Furthermore, the default behaviour for resolving \ac{dns} returns one \ac{ip} address, which makes addressing all the available nodes not feasible.
+
+The second option leverages much the same mechanisms, however the querying of \ac{dns} entries is handled by a Sidecar container \cite{azure-sidecar}.
+By using a separate application for this task, we can make sure that no caches are being used and provide all the \ac{ip} addresses to the container, instead of a single one that keeps changing.
+For each user container running in a Pod, a second container will be automatically added as a sidecar \cite{azure-sidecar}. The sidecar container then exposes a simple HTTP endpoint for retrieving the current IP addresses at any moment.
+Whenever a request is made, the sidecar application will create a DNS lookup to the Kubernetes service and return the list to the container.
+
+From an architecture perspective, this means that every simulation node is mapped to a Kubernetes Pod with its discovery sidecar, and a Kubernetes Service\footnote{\url{https://kubernetes.io/docs/concepts/services-networking/service/}} where all the nodes that should be visible and therefore connected to the given node.
+This goes against the intuitive way of using Kubernetes Services, where usually the companioning Service is used to make the Pod or Deployment available to other systems. Here the usage is reversed. In addition, each node will also be accompanied by a Kubernetes Network Policy to create network isolation between the nodes. This will be explored in more detail in the next section.
+
+\subsection{Link \label{sim-link}}
+
+A link is defined as the ability to communicate between two nodes.
+Links, as nodes, can be established or destroyed at any moment, enabling or blocking communications between nodes.
+By default, all communication is blocked, meaning that no communication is possible between nodes and to any network outside the simulation.
+
+Links also have directionality, meaning that for a given link we can specify different properties for incoming and outgoing traffic.
+This is useful for simulating asymmetric links, where the quality of the link is different in one direction to the other. In addition, it allows simulating unidirectional links, where a link can only communicate in one direction, with no reply possible.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{ l|l }
+    \label{table:properties-link}
+    Property   & Description                                     \\
+    \hline
+    From       & Source node. Specified as ID                    \\
+    To         & Destination node. Specified as ID               \\
+    Direction  & Direction of the link. Uni-, or bidirectional   \\
+    Parameters & Parameters for link quality. \ref{link-quality} \\
+  \end{tabular}
+  \caption{Link Properties}
+\end{table}
+
+Manual, user given, IDs for links are not necessary as we only create a single, unique link between two nodes. As source and destination IDs are both unique, its combination is unique as well. Internally the simulator will use this combination as the ID for the link and construct a unique name for the Kubernetes object composed by from, to, and direction of a given link.
+
+\subsubsection{Communication}
+
+The foundation of communication between simulation nodes is carried out over \ac{ip}. The choice of what protocols are used on top of \ac{ip} is open to the user of the simulator. \ac{tcp} and \ac{udp} could be such protocols, for example, but it can be new protocols, or no protocol at all. The simulator is agnostic, and it's in the domain of the user provided container image to implement communication on top of \ac{ip}.
+
+\subsubsection{Convergence Layer}
+
+The Convergence layer, as described in \cite{RFC9171}, is a fundamental part of the Bundle Protocol, with \ac{ltp} being often considered as the most common protocol to implement such a convergence layer. Other alternatives exist, as mTCP \cite{ietf-dtn-mtcpcl-01} which uses TCP as the underlying protocol.
+As the simulation nodes have access to the IP stack, they can provide their own convergence layer as needed.
+
+The implementation of such a layer is not part of the simulator, but it's up to the container image to implement it. The simulator will provide the necessary tools to create and manage the links between nodes, but it's up to the container image to implement the convergence layer upon the nodes communicate. However, this is an optional step, as the node can also simply communicate over \ac{ip} and any protocol built on top of it, such as (but not limited to) \ac{tcp} and \ac{udp}.
+
+\subsubsection{Quality of a link} \label{link-quality}
+
+A key part in the simulation is the ability to disrupt and degrade the quality of service on a given link. This is essential as it creates the actual difficulty for nodes to talk and communicate between each other.
+
+The quality of links is the parameters with which the link between two simulation nodes can be modelled and manipulated. They are divided into two categories: \textit{Base properties} and \textit{Faults}. \ref{table:link-parameters}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{|l|l|l|}
+    \hline
+    Parameter   & Type  & Description                              \\
+    \hline\hline
+    Bandwidth   & Base  & Bandwidth of the link                    \\
+    Latency     & Base  & The one-way latency of the link          \\
+    Jitter      & Fault & Variance in latency                      \\
+    Packet Loss & Fault & Probability of packet loss               \\
+    Duplication & Fault & Probability of a packet to be duplicated \\
+    Reordering  & Fault & Probability of packet to be reordered    \\
+    Corruption  & Fault & Probability of packet to be corrupted    \\
+    \hline
+  \end{tabular}
+  \caption{Categories of link parameters}
+  \label{table:link-parameters}
+\end{table}
+
+Each parameter can be set on initialization and changed over time during the course of the simulation using events \ref{sim-event}. Details about single parameters will be explained in the next chapter \ref{chapter:implementation}.
+
+\subsection{Event \label{sim-event}}
+
+Events are the driving component of a scenario, as they dictate the actual change in the simulation. They are created statically and are therefore predefined at the start of a simulation as a part of the scenario.
+
+An event is defined as a certain action that the operator \ref{sim-controller} has to take. Actions are responsible for altering the current state and therefore modifying links \ref{sim-link} and nodes \ref{sim-node}, or concluding a simulation run.
+
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{ l|l }
+    \label{table:properties-event}
+    Property & Description                                                                              \\
+    \hline
+    Offset   & Offset in \si{\milli\second} relative to the start of the simulation                     \\
+    Resource & $node$, $link$ or $scenario$                                                             \\
+    Action   & Type of action taken on the resource ${create, delete, set, end}$                        \\
+    Data     & Data to affect the resource, will be dependent on the specific resource and action taken \\
+  \end{tabular}
+  \caption{Event Properties}
+\end{table}
+
+For each resource type, there are different actions that can be taken. Next, the different actions will be laid out for each resource. The exact data definitions will be specified in the chapter about the implementation \ref{chapter:implementation}.
+\subsubsection{Scenario}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{|l|c|l|l|}
+    \hline
+    Resource & Action & Description        & Data \\
+    \hline\hline
+    scenario & end    & End the simulation & -    \\
+    \hline
+  \end{tabular}
+  \caption{Categories of link parameters}
+  \label{table:events-scenario}
+\end{table}
+
+\subsubsection{Node}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{|l|c|l|l|}
+    \hline
+    Resource & Action & Description       & Data                                \\
+    \hline\hline
+    node     & create & Create a new node & id, image and general pod resources \\
+    node     & delete & Delete a node     & id                                  \\
+    \hline
+  \end{tabular}
+  \caption{Categories of link parameters}
+  \label{table:events-node}
+\end{table}
+
+
+\subsubsection{Link}
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{|l|c|l|l|}
+    \hline
+    Resource & Action & Description       & Data                                                           \\
+    \hline\hline
+    link     & create & Create a new link & from, to, direction and parameters \ref{table:link-parameters} \\
+    link     & delete & Delete a link     & from, to, direction                                            \\
+    % link     & set    & Set link parameters & from, to and parameters \ref{table:link-parameters}            \\
+    \hline
+  \end{tabular}
+  \caption{Categories of link parameters}
+  \label{table:events-link}
+\end{table}

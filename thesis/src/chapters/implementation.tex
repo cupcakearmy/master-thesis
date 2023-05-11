@@ -1,0 +1,726 @@
+\chapter{Implementation}
+\label{chapter:implementation}
+
+This chapter will discuss the implementation details of the simulator. It will describe the different components and their interactions. It will also discuss the design decisions that were made during the development of the simulator, providing an insight into the reasoning behind the design.
+
+\section{Naming}
+
+The name of the simulator is \textit{Iluzio}, which means \textit{illusion} in Esperanto. The name was chosen because the simulator should aim to create an illusion of a real network.
+
+As Custom Resource Definitions (CRDs) are a core part of the Kubernetes API, it is important to choose a name that is not already taken. This means that the name of the CRDs should be unique. Every CRD requires a unique \verb|group|, followed by a name for ech CRD under that group. The chosen group is \verb|iluzio.nicco.io|. The name what chosen as \verb|nicco.io| is the domain name of the author of this work. This should ensure that the name is unique and will not conflict with other CRDs.
+
+Under the group \verb|iluzio.nicco.io|, the following CRDs are defined (in the plural form):
+
+\begin{itemize}
+  \item \verb|scenarios| - The main CRD that defines the simulation
+  \item \verb|nodes| - A node in the simulation
+  \item \verb|links| - A link between two nodes in the simulation
+\end{itemize}
+
+\section{Controller}
+
+As discussed before, the controller is being implemented as a Kubernetes Operator. While writing operators from scratch is possible, since Kubernetes exposes an API which one can use, it is not very maintainable in the long run. There are a few projects that try to tackle this issue and present themselves as "Operator Frameworks"
+
+\begin{itemize}
+  \item Kube Builder \footnote{\url{https://kubebuilder.io/}}
+  \item Kopf \footnote{\url{https://github.com/nolar/kopf}}
+  \item Operator Framework \footnote{\url{https://operatorframework.io/}}
+  \item kube-rs \footnote{\url{https://kube.rs/}}
+  \item Java Operator SDK \footnote{\url{https://github.com/java-operator-sdk/java-operator-sdk}}
+  \item KubeOPS \footnote{\url{https://buehler.github.io/dotnet-operator-sdk/}}
+\end{itemize}
+
+Most of the above listed are very low-level frameworks that allow the user to get deep into the inner workings of Kubernetes, at a cost. Since the simulator does not need deep access to the low-level internals of Kubernetes, the framework was selected that is deemed more readable and maintainable and easy to develop. In this case, the choice of Kopf seemed the framework that most fitted the requirements for this work. It has an event-driven approach first and abstracts a lot of boilerplate code required such that the actual domain logic of the simulator is more readable and understandable. Kopf was originally developed at Zalando \footnote{\url{https://engineering.zalando.com/}} and later made open source. It is active being maintained and developed at the time of writing (\today).
+
+The controller can be run as cluster wide, or in a namespaced scope. The latter is the recommended way of running the controller, as it allows for better isolation.
+
+The controller reacts to lifecycle methods of the Scenario CRD, which will be described below. Internally, it will create and delete other CRDs, such as Nodes and Links and act upon in an event driven, asynchronous manner. This allows the controller to separate logic and concerns for the different subcomponents.
+
+Another option is to create the nodes and links with their appropriate CRDs manually. The controller also listens to the creation and deletion of these CRDs, as they are used internally. This gives the user the option to create the nodes and links manually, should the scenario CRD be insufficient for the simulation.
+
+\section{Scenario}
+
+The Scenario is the heart of a simulation. It is the CRD that the user interacts with and defines the simulation. It is the only CRD that is not created by the controller, but by the user. The controller will then react to the creation of the CRD and start the simulation.
+
+A scenario, at its core, is a list of events that trigger a change in the simulation. This change can create or delete either a node or a link. Additionally, there is an event for concluding the simulation. The events also have an \verb|offset| field, which defines the time offset in \si\ms from the start of the simulation, at which the event should be triggered.
+
+Next, we will discuss how the scenario is implemented in the controller.
+
+\subsection{Timers vs. Daemons}
+
+By the nature of the simulation, there has to be a mechanism that will run the specified events at the specified time. In Kopf there are two possible ways of implementing this: timers\footnote{\url{https://kopf.readthedocs.io/en/stable/timers/}} and daemons\footnote{\url{https://kopf.readthedocs.io/en/stable/daemons/}}. Both options, in theory, can deliver the functionality required for the simulation. However, as the relative approach differs between the two, we will look at the advantages and disadvantages of each approach.
+
+In \textit{timers}, the controller will periodically execute a given function. This interval is fixed and defined at startup. This means that the controller would need to define a fixed, minimum, frequency at which the timer would be executed. The controller could calculate the minimum required interval between runs before starting the timer, as all events are known beforehand. However this would add complexity without much benefit. Timers seems best fit to regular, cron-like, logic that needs to execute at a fixed interval.
+
+On the other hand, \textit{daemons} are started when a given resource is created and share the same lifecycle as the resource they are responsible for. This means that the daemon runs continuously alongside the resource. This enables it to do arbitrary logic, at arbitrary intervals, as long as the resource exists. Therefore inherently have a higher degree of flexibility. As \textit{timers}, a daemon needs to decide when and how long to "sleep". However, the daemon has the liberty of choosing when, and for how long to "sleep".
+
+For the purpose of orchestrating a scenario, the daemon approach deemed more fit for the use case. This means that the controller will start a daemon for each scenario that is being created. The daemon will then execute the events at the specified time offset. It achieves this by calculating the time delta between the current time and the time at which the next event is supposed to be executed. This allows the daemon to save resources, by not creating additional load on the system. An overview of the lifecycle of a scenario is shown in \ref{fig:scenario-lifecycle}.
+
+All the resources created during a scenario are assigned a Kubernetes OwnerReference\footnote{\url{https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/}} with the scenario resource as the owner. This means that when the scenario is deleted, all the resources created by the scenario will be deleted alongside it. This makes cleaning up the simulation easier and ensures that no resources are left behind, existing in the cluster. This is done by using the a utility function provided by the Kopf framework called \verb|kopf.adopt|\footnote{\url{https://kopf.readthedocs.io/en/stable/packages/kopf/\#kopf.adopt}}. This function will set the owner reference of the resource for us.
+
+\begin{figure}[H]
+  \label{fig:scenario-lifecycle}
+  \caption{Lifecycle of a Scenario}
+  \centering
+  \includegraphics[width=0.5\textwidth]{scenario.mmd.pdf}
+\end{figure}
+
+\subsection{Events}
+
+The core element of a scenario are it's events. They change the state of the running simulation.
+
+Every event has at least two mandatory fields: \verb|resource| and \verb|offset|.
+The offset is the time offset in \si\ms from the start of the simulation, not the previous event. The resource field is a string that defines the type of resource that is affected by the event.
+There are 3 types of resources that can be affected: \verb|scenario|, \verb|node| and \verb|link|. Each available resource type will be explained below.
+
+\subsubsection{Scenario}
+
+Then \verb|resource: scenario| there is only one \verb|action| available: \verb|end|. This action will end the simulation. This is done by setting the \verb|status.ended| field of the scenario CRD to the current time. This will cause the scenario daemon to stop executing events and the simulation will end. An example can be seen below.
+
+\begin{minted}{yaml}
+- offset: 80
+  resource: scenario
+  action: end 
+\end{minted}
+
+\subsubsection{Node}
+
+For the \verb|resource: node| there are two actions available: \verb|create| and \verb|delete|.
+
+The \verb|create| action will create a node with the given \verb|id|. The id must be unique within the scenario. Additionally the \verb|spec| field must be provided. This field contains the specification of the node \ref{listing:node-spec-example}.
+
+\begin{minted}{yaml}
+- offset: 0
+  resource: node
+  action: create
+  id: base0
+  spec:
+    image: base-os
+    airGapped: false
+\end{minted}
+
+The \verb|delete| action will delete the node with the given \verb|id|. An example can be seen below.
+
+\begin{minted}{yaml}
+- offset: 10
+  resource: node
+  action: delete
+  id: base0
+\end{minted}
+
+\subsubsection{Link}
+
+For the \verb|resource: link| there are two actions available: \verb|create| and \verb|delete|.
+
+The \verb|create| action will create a link between the nodes with the given \verb|from| and \verb|to| \verb|id|s.
+The \verb|direction| field specifies the directionality of the link. It can be either \verb|uni| or \verb|bi|.
+Additionally the \verb|spec| field must be provided. This field contains the specification of the link \ref{listing:link-example-bandwidth}.
+
+\begin{minted}{yaml}
+- offset: 15
+  resource: link
+  action: create
+  from: base0
+  to: sat0
+  direction: bi
+  spec:
+    bandwidth:
+      rate: 10mbps
+      limit: 2000000000
+      buffer: 200000
+\end{minted}
+
+The \verb|delete| action will delete the link between the nodes with the given \verb|from| and \verb|to| \verb|id|s, given a \verb|direction|. An example can be seen below.
+
+\begin{minted}{yaml}
+- offset: 45
+  resource: link
+  action: delete
+  from: base0
+  to: sat0
+  direction: bi
+\end{minted}
+
+\subsection{Persistence}
+
+In order to make the controller idempotent, a common architecture goal for Kubernetes operators, the controller will set specific data on the CRD it manages that represent the current state. This is done usually in the \verb|status| field of the CRD. The actual creation of these labels is handled by the respective daemon responsible for a specific CRD. This ensures that even if the daemon, or event the whole operator, is restarted, the state of the simulation is still preserved and the simulation can be resumed.
+
+The following fields are used for the scenario CRD:
+
+\begin{itemize}
+  \item \verb|status.started|: Unix timestamp of when the simulation was started, in \si\ms.
+  \item \verb|status.ended|: Unix timestamp of when the simulation ended, in \si\ms.
+  \item \verb|status.events[i].executed|: Unix timestamp of when the event was executed, in \si\ms. If set, the event was executed, otherwise empty.
+\end{itemize}
+
+\begin{figure}[H]
+  \label{fig:scenario-fields-lifecycle}
+  \caption{Status fields of a Scenario}
+  \centering
+  \includegraphics[width=0.75\textwidth]{scenario_fields.mmd.pdf}
+\end{figure}
+
+\subsection{Specification}
+
+\subsubsection{CRD}
+
+The Scenario CRD is defined as follows \ref{listing:crd-scenario}.
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{yaml}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: scenarios.iluzio.nicco.io
+spec:
+  scope: Namespaced
+  group: iluzio.nicco.io
+  names:
+    kind: Scenario
+    plural: scenarios
+    singular: scenario
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+\end{minted}
+  \caption{Scenario CRD}
+  \label{listing:crd-scenario}
+\end{listing}
+
+\subsubsection{Example}
+
+An example can found in the below \ref{listing:scenario-example-simple}. In the example, a scenario is created that will create two nodes, a base station and a satellite. After 15 seconds it will then create a link between the two nodes. After 45 seconds (from the start of the simulation) the link will be deleted. The scenario will then wait for another 15 seconds before terminating, lasting 60 seconds in total.
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{yaml}
+apiVersion: iluzio.nicco.io/v1
+kind: Scenario
+metadata:
+  name: one-sat-two-base
+spec:
+  events:
+    # Setup
+    - offset: 0
+      resource: node
+      action: create
+      id: base0
+      spec:
+        image: base-station
+
+    - offset: 0
+      resource: node
+      action: create
+      id: sat0
+      spec:
+        image: satellite
+
+    # Links
+    - offset: 15
+      resource: link
+      action: create
+      from: base0
+      to: sat0
+      direction: bi
+      spec:
+        bandwidth:
+          rate: 10mbps
+          limit: 2000000000
+          buffer: 200000
+
+    - offset: 45
+      resource: link
+      action: delete
+      from: base0
+      to: sat0
+      direction: bi
+
+    # End
+    - offset: 60
+      resource: scenario
+      action: end
+\end{minted}
+  \caption{Example Scenario CRD}
+  \label{listing:scenario-example-simple}
+\end{listing}
+
+\section{Node}
+
+A node is a container that is created by the simulator. It is the basic building block of a simulation. It can be controlled by events in a scenario. The user must specify an \ac{oci} compatible image, such as a docker image, that is used for the container. The image has to be available in the container registry of the Kubernetes cluster.
+
+Each node must be assigned a unique ID. This ID is used to identify the node in the simulation. The ID has to conform to the Kubernetes naming schema\footnote{\url{https://kubernetes.io/docs/concepts/overview/working-with-objects/names/\#names}}. Each ID will be prefixed by the name of the scenario, to avoid name collisions.
+
+Optionally, the user can specify other container spec fields\footnote{\url{https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.19/\#container-v1-core}}, such as limiting resources of the container, environment variables, etc.
+
+The container itself lives inside a Kubernetes Pod alongside the sidecar container provided by the simulator.
+A Kubernetes Deployment with only a single replica is created for that Pod, which is responsible for the lifecycle of the Pod.
+In addition to the Deployment, the simulator also creates a Kubernetes Service for the Pod, which is used for making other nodes discoverable and a Network Policy that restricts the network traffic of the Pod by partitioning the network.
+
+\begin{figure}[H]
+  \label{fig:node-overview}
+  \caption{lifecycle of a scenario}
+  \centering
+  \includegraphics[width=0.5\textwidth]{Single Node.pdf}
+\end{figure}
+
+\subsection{Specification}
+
+
+\subsubsection{CRD}
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{yaml}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: nodes.iluzio.nicco.io
+spec:
+  scope: Namespaced
+  group: iluzio.nicco.io
+  names:
+    kind: Node
+    plural: nodes
+    singular: node
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+  \end{minted}
+  \caption{Example Iluzio Node}
+  \label{listing:node-spec-crd}
+\end{listing}
+
+\subsubsection{Native Kubernetes resources}
+
+The following are the templates used for the three Kubernetes resources that are created for each node: Deployment \ref{listing:node-deployment-spec}, Service \ref{listing:node-service-spec}, and Network Policy \ref{listing:node-network-policy-spec}.
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{yaml}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${id}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      node: ${id}
+  template:
+    metadata:
+      name: pod-${id}
+      labels:
+        node: ${id}
+    spec:
+      dnsPolicy: ClusterFirst
+      containers:
+        # Image
+        - name: app
+          image: ${image}
+          imagePullPolicy: Never
+          resources: ${resources}
+        # Sidecar
+        - name: sidecar
+          image: sidecar
+          imagePullPolicy: Never
+          env:
+            - name: SERVICE
+              value: ${id}
+          resources: {}
+\end{minted}
+  \caption{Node Deployment}
+  \label{listing:node-deployment-spec}
+\end{listing}
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{yaml}
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${id}
+spec:
+  clusterIP: None
+  selector:
+    receive-node-${id}: enabled
+  \end{minted}
+  \caption{Node Service}
+  \label{listing:node-service-spec}
+\end{listing}
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{yaml}
+kapiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ${id}
+spec:
+  podSelector:
+    matchLabels:
+      node: ${id}
+  ingress:
+    # Internal DNS
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+    # All the pods in the same namespace
+    - from:
+        - podSelector:
+            matchLabels:
+              send-node-${id}: enabled
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+    - to:
+        - podSelector:
+            matchLabels:
+              receive-node-${id}: enabled
+  \end{minted}
+  \caption{Node Network Policy}
+  \label{listing:node-network-policy-spec}
+\end{listing}
+
+\subsubsection{Example}
+
+An example for a node specification can be found in the listing \ref{listing:node-spec-example}. In the example the node is named \verb|sat0| and uses the image \verb|sat-os|, which is made available to the registry of the cluster. The node is air gapped, meaning that it cannot communicate with the internet. The node is limited to 128Mi of memory, 500m of CPU and 100Mi of ephemeral storage.
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{yaml}
+apiVersion: iluzio.nicco.io/v1
+kind: Node
+metadata:
+  name: sat0
+spec:
+  image: sat-os
+  airGapped: true
+  resources:
+    limits:
+      memory: '128Mi'
+      cpu: '500m'
+      ephemeral-storage: "100Mi"
+  \end{minted}
+  \caption{Example Iluzio Node}
+  \label{listing:node-spec-example}
+\end{listing}
+
+\subsection{Labels}
+
+Labels are an essential tool in Kubernetes, and the simulator also relies on their mechanism to work. In the simulator, they are used to identifying pods for the following purposes:
+
+\begin{itemize}
+  \item Identifying the pods that should be discoverable by other pods
+  \item Determining ingress and egress traffic of a pod to another given pod
+  \item Identifying the pods that should be targeted by Chaos Mesh.
+\end{itemize}
+
+Each Pod and Deployment are given the label \verb|node: <id>|. This ID is used by the Service and Chaos Mesh to identify the pods that should be targeted.
+
+For controlling the NetworkPolicy, dynamic labels are used. These labels are created by the simulator and are used to match to predefined NetworkPolicy rules. The labels are created in the following format:
+
+\begin{minted}[fontsize=\scriptsize]{yaml}
+node: <id> 
+send-node-<id>: enabled
+receive-node-<id>: enabled
+\end{minted}
+
+How these labels are used is explained in the following sections \ref{fig:link-network-partition-labels}.
+
+\subsection{Lifecycle}
+
+The lifecycle of a node \ref{fig:node-lifecycle} inside a simulation has two possible states: existing and not existing.
+
+On creation, the simulator starts not only the node but also a few other resources needed around it.
+
+Whenever an event occurs that mandates the deletion of the node, all the resources created by the simulator are deleted. This includes the Pod, Deployment, Service, and Network Policy.
+
+\begin{figure}[H]
+  \label{fig:node-lifecycle}
+  \caption{lifecycle of a scenario}
+  \centering
+  \includegraphics[width=1\textwidth]{node.mmd.pdf}
+\end{figure}
+
+As the scenario, the node adopts all the resources it creates, creating a OwnerReference to itself for the Deployment, Service, and Network Policy. Therefore, when the node is deleted, all the resources are deleted as well.
+
+\subsection {Node Discovery}
+
+As discussed before, the nodes are discovered by a sidecar container that runs in the same pod as the controller.
+This sidecar container is a simple Node\footnote{\url{https://nodejs.org/}} application that uses the Kubernetes DNS to discover the other nodes in the cluster.
+It then exposes this information via an HTTP endpoint.
+The simulation node inside the same pod then uses this endpoint to discover the other simulation nodes it can then connect to.
+
+Each node in the simulator has an associated Kubernetes Service in which other nodes can be registered, and therefore marked as "connected" and discoverable.
+For each Service, Kubernetes creates a DNS record for each registered node that matches the Service's selector.
+We leverage that feature to retrieve the IP addresses of the other nodes in the cluster.
+
+By default, services act as a load balancer and therefore distribute the traffic to all registered nodes. By configuring the service as a headless service\footnote{\url{https://kubernetes.io/docs/concepts/services-networking/service/\#headless-services}}, the load balancing is disabled and the DNS record will contain all registered nodes.
+
+
+For looking up the DNS records, \verb|dig| was chosen as \verb|nslookup| is deprecated\footnote{\url{https://cr.yp.to/djbdns/nslookup.html}} and \verb|dig| supports the \verb|+short| option which makes it easy to retrieve the IP addresses of the nodes. As an example, the following command retrieves the IP addresses of all nodes that are registered to the service \verb|service-a|.
+
+\begin{minted}{bash}
+dig +short +search service-a
+\end{minted}
+
+After the IP addresses are retrieved, the sidecar container will expose them via an HTTP endpoint. The endpoint is \verb|localhost:42069/discoverable| and returns a JSON array of the IP addresses of the other nodes. Alternatively, the endpoint can format the IPs to a new line—separated list by adding the query parameter \verb|format=plain| to the URL.
+
+The sidecar container was written in Go\footnote{\url{https://go.dev/}} as it is a compiled language and therefore has a relatively small footprint. It is widely used in the Kubernetes ecosystem and is easy to manage and maintain.
+
+\section{Link}
+
+\subsection{Network disruption and degradation}
+
+To realise the faults and non-ideal network links, the library Chaos Mesh\footnote{\url{https://chaos-mesh.org/}} was selected, as it is well maintained and being active developed. it's a CNCF project\footnote{\url{https://www.cncf.io/projects/}} and therefore has a wide community behind it.
+It fits the simulator very well as it builds on Kubernetes standards and therefore integrates very well in the architecture of the simulator.
+
+Chaos Mesh offers a variety of different network faults which fits the needs of the simulator perfectly. Fault categories supported include: delay (latency, jitter), reordering, loss, duplication, corruption, and bandwidth (rate, limit, buffer) and a few more.
+The simulator will primarily use the NetworkChaos \footnote{\url{https://chaos-mesh.org/docs/simulate-network-chaos-on-kubernetes/}} to emulate different network link characteristics and faults.
+Under the hood Chaos Mesh uses the Linux Traffic Control \verb|tc|\footnote{\url{https://man.archlinux.org/man/tc.8}} system and its addition \verb|netem|\footnote{\url{https://man.archlinux.org/man/core/iproute2/tc-netem.8}} to create the faults.
+
+As of the time of writing (\today), the ChaosMesh has a bug\footnote{\url{https://github.com/chaos-mesh/chaos-mesh/issues/3631}} that prevents having bandwidth limits on the same NetworkChaos in combination with other faults.
+
+Another to the advantages of Chaos Mesh, it includes a variety of additional faults that it can induce in a system, making it a great starting point for adding even more options later on. Examples of some non network related faults are disk errors and time skewing (clock skew).
+
+Apart from Chaos Mesh, Network Policies \footnote{\url{https://kubernetes.io/docs/concepts/services-networking/network-policies/}} are used, a Kubernetes native feature, for creating network segmentation for the pods and therefore the simulation nodes.
+This requires the cluster to be configured with a \ac{cni} that supports Network Policies. A widely used and supported \ac{cni} is Calico\footnote{\url{https://www.tigera.io/project-calico/}}. It's open source and the de facto standard for Kubernetes clusters.
+
+\subsection{Common network settings}
+
+There are base network rules that are applied to all nodes in a scenario.
+By default, no traffic is allowed in or out of a node, except for the Kubernetes System.
+This is required for the node discovery sidecar container to work, as it needs access to the Kubernetes DNS to resolve the other nodes.
+The label used by the Network Policy to allow traffic to the Kubernetes System is \verb|kubernetes.io/metadata.name: kube-system|.
+
+\begin{figure}[H]
+  \label{fig:node-network}
+  \caption{Common network overview for single node, not air gapped (NS: Namespace)}
+  \centering
+  \includegraphics[width=0.75\textwidth]{Network.pdf}
+\end{figure}
+
+If selected, the nodes can have access to the internet. This is done by adding an exception to the Network Policy. This works by allowing traffic to all IPs, therefore \verb|0.0.0.0/0|, except all the private IP ranges defined by the IETF \cite{rfc1918}, which are \verb|10/8|, \verb|172.16/12| and \verb|192.168/16|. The field to toggle whether the node has access to the internet is the \verb|spec.airGapped| field of the node resource, which by default is set to \verb|true|.
+
+These settings are common, which means that they do not reside in a global, single Network Policy, but are applied to each node individually. This gives the maximal flexibility to the user, as they can choose to have a single node with internet access, or all nodes, or none at all.
+
+\subsection{Network partitioning}
+
+To realise network segmentation, both Network Policies and Chaos Mesh were considered. The following table compares the two approaches.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{|l|l|l|}
+    \hline
+                           & \textbf{Network Policies} & \textbf{Chaos Mesh}                              \\ \cline{2-3}
+    \textbf{Advantages}    & Native to Kubernetes      & Already installed, no overhead added             \\ \hline
+    \textbf{Disadvantages} & Require \ac{cni} support. & Additional complexity and unnecessary dependency \\ \hline
+  \end{tabular}
+  \caption{Comparison of Network Policies and Chaos Mesh}
+  \label{tab:network-policies-vs-chaos-mesh}
+\end{table}
+
+As seen in Table \ref{tab:network-policies-vs-chaos-mesh}, both would be a viable option. In this case NetworkPolicies where chosen as they are the native way of doing things in Kubernetes and therefore the most maintainable and future proof option, while having all the functionality required for the simulator. Both option support unidirectional control.
+
+For each node in the scenario, a Network Policy is created that allows traffic exclusively to the Kubernetes System.
+This is done by creating a Network Policy that allows traffic to the Kubernetes System and denies all other traffic.
+When a link is created between two nodes, the Network Policy is updated to allow traffic to the other node as well.
+This exception follows the lifecycle of the link and is removed when the link is deleted.
+The Network Policy is deleted when the node is deleted.
+
+The network policies are steered by labels, which are applied to the pods. The labels are created by the controller whenever a link is created or removed.
+By using labels, the network policies can be updated without having to delete and recreate them, as they can leverage the native \verb|matchLabels| selector.
+As both unidirectional and bidirectional links are supported, two types of labels are required, one for ingress and one for egress.
+The labels are created as follows:
+
+\begin{itemize}
+  \item \verb|send-node-<id>: enabled|
+  \item \verb|receive-node-<id>: enabled|
+\end{itemize}
+
+The \verb|<id>| is the unique identifier of the node, which should be connected to the node the policy is applied to. An example of how labels are shown below \ref{fig:link-network-partition-labels}.
+
+\begin{figure}[H]
+  \label{fig:link-network-partition-labels}
+  \caption{Network partitioning by labels}
+  \centering
+  \includegraphics[width=1\textwidth]{Network Labels.pdf}
+\end{figure}
+
+\subsection{Lifecycle}
+
+The link lifecycle is shown in Figure \ref{fig:link-lifecycle}. Whenever a link is created, the controller will patch the labels of the pods of the nodes that should be connected. The exact labels are shown in the previous section.
+
+Additionally to patching the labels, the controller will also create the NetworkChaos resource for the link. This resource is being provided by Chaos Mesh and is used to create the network degradation.
+
+Whenever a link is deleted, the controller will revert the labels it previously modified and the NetworkChaos resource will be deleted automatically, as it is owned by the link thanks the OwnerReference.
+
+\begin{figure}[H]
+  \label{fig:link-lifecycle}
+  \caption{Link lifecycle}
+  \centering
+  \includegraphics[width=1\textwidth]{link_lifecycle.mmd.pdf}
+\end{figure}
+
+\subsection{Specification}
+
+\subsubsection{CRD}
+
+The link CRD is defined as follows \ref{listing:link-crd}:
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{yaml}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: links.iluzio.nicco.io
+spec:
+  scope: Namespaced
+  group: iluzio.nicco.io
+  names:
+    kind: Link
+    plural: links
+    singular: link
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+  \end{minted}
+  \caption{Link CRD}
+  \label{listing:link-crd}
+\end{listing}
+
+The following fields are available in the link CRD \verb|spec| field.
+For details about the ChaosMesh parameters, refer to the \href{https://chaos-mesh.org/docs/simulate-network-chaos-on-kubernetes/\#field-description}{documentation of Chaos Mesh NetworkChaos}.
+If the \verb|direction| is set to \verb|"bi"|, the \verb|from| and \verb|to| fields are can be swapped, as it would not have any effect.
+If the \verb|direction| is set to \verb|"uni"|, all disruptions will only applied in the direction of the link.
+
+% Table with link fields, required, type, description
+\begin{table}[H]
+  \centering
+  \begin{tabular}{|l|l|l|l|}
+    \hline
+    \textbf{Field}   & \textbf{Required} & \textbf{Type}          & \textbf{Description}                                           \\
+    \hline\hline
+    \verb|from|      & Yes               & string                 & The name (id) of the sending node.                             \\ \hline
+    \verb|to|        & Yes               & string                 & The name (id) of the receiving node.                           \\ \hline
+    \verb|direction| & Yes               & string                 & The direction of the link. Can be \verb|"uni"| or \verb|"bi"|. \\ \hline
+    \verb|bandwidth| & No                & NetworkChaos parameter & The bandwidth of the link.                                     \\ \hline
+    \verb|delay|     & No                & NetworkChaos parameter & The delay of the link.                                         \\ \hline
+    \verb|loss|      & No                & NetworkChaos parameter & The loss of the link.                                          \\ \hline
+    \verb|duplicate| & No                & NetworkChaos parameter & The duplicate of the link.                                     \\ \hline
+    \verb|corrupt|   & No                & NetworkChaos parameter & The corrupt of the link.                                       \\ \hline
+  \end{tabular}
+  \caption{Link fields}
+  \label{tab:link-fields}
+\end{table}
+
+\subsubsection{Example}
+
+Two examples can be seen below. The first one is a unidirectional link limiting bandwidth \ref{listing:link-example-bandwidth}, the second one is a bidirectional link with delay \ref{listing:link-example-delay}.
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{yaml}
+apiVersion: iluzio.nicco.io/v1
+kind: Link
+metadata:
+  name: some-link
+spec:
+  from: a
+  to: b
+  direction: uni
+  bandwidth:
+    rate: 10kbps
+    limit: 3000
+    buffer: 1600
+  \end{minted}
+  \caption{Example link with limited bandwidth}
+  \label{listing:link-example-bandwidth}
+\end{listing}
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{yaml}
+apiVersion: iluzio.nicco.io/v1
+kind: Link
+metadata:
+  name: some-link
+spec:
+  from: a
+  to: b
+  direction: bi
+  delay:
+    latency: 50ms
+    correlation: '25'
+    jitter: 15ms
+
+  \end{minted}
+  \caption{Example link with delay}
+  \label{listing:link-example-delay}
+\end{listing}
+
+
+\subsection{Updating link properties}
+
+Update is handled as deletion and creation of a new link.
+This is due to the fact that the link is a CRD provided by Chaos Mesh and is (for now) immutable \footnote{\url{https://chaos-mesh.org/docs/run-a-chaos-experiment/\#update-chaos-experiments-using-commands}} \footnote{\url{https://github.com/chaos-mesh/chaos-mesh/issues/2227}}.
+The link therefore deleted and a new one is created with the new parameters.
+This leaves a small window of time where there are no restrictions on the network traffic.
+
+\section{Miscellaneous Topics}
+
+\subsection{DNS Propagation}
+
+As per default, Kubernetes DNS (usually CoreDNS) is configured to cache DNS records for 30 seconds. This delays the propagation of DNS records to the pods and therefore how fast a Link is created. This time can be between 0 and TTL cache. This can be problematic for the simulator, as it needs up to date DNS records to make nodes available to other nodes. It is therefore reccomended to disable or lower the TTL cache. To configure the cluster DNS refer to the Kubernetes documentation\footnote{\url{https://kubernetes.io/docs/tasks/administer-cluster/dns-custom-nameservers/}}. For most clusters with common configuration, this can be achieved by changing the following CoreDNS configmap:
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{yaml}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |
+    .:53 {
+        # ... other config
+        cache 1
+    }
+  \end{minted}
+  \caption{Node Service}
+  \label{listing:coredns-configmap}
+\end{listing}

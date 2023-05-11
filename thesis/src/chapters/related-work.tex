@@ -1,0 +1,94 @@
+\chapter{State-of-the-Art and related work}
+
+The following simulators were chosen for this comparison \ref{table:dtn-simulators-chosen}. They were mostly selected based on discoverability and being open source.
+
+\begin{table}[h]
+  \centering
+  \caption{Chosen simulators}
+  \label{table:dtn-simulators-chosen}
+  \begin{tabular}{ l|r|r }
+    Name                       & Language      & Last Update               \\
+    \hline
+    The One \cite{sim-theone}  & \verb|Java|   & \formatdate{27}{10}{2015} \\
+    OPS \cite{sim-ops}         & \verb|C++|    & \formatdate{13}{6}{2022}  \\
+    ns3-dtn-bit \cite{sim-ns3} & \verb|C++|    & \formatdate{2}{6}{2018}   \\
+    dtnsim \cite{sim-dtnsim}   & \verb|Python| & \formatdate{8}{12}{2021}  \\
+    DTN \cite{sim-dtn}         & \verb|C#|     & \formatdate{8}{8}{2017}   \\
+  \end{tabular}
+\end{table}
+
+\section{Overview of single simulators}
+
+\subsection{The One}
+
+The One is one of the most popular and well known simulators available for \ac{dtn} that started out in 2007.
+
+It has quite a number of features available and prebuilt in.
+For movement, we have many prebuilt options such as map based movement, random, and a few more.
+Routing also has the basic and a few more routing algorithms available, such as First Contact, Epidemic, Spray and Wait, DIrect delivery, ProPHET and MaxProp.
+There is a GUI for following the simulation visually.
+Reporting is configurable and can be done in a variety of formats.
+
+Some shortcomings are that it only supports 2D topologies and the documentation is available but not extensive, only covers some very basic settings. Everything else needs to be looked up in the code base.
+A bit problem is that The One does not support the use of real-world protocols for simulating the convergence layer, which is required by the \ac{bp}. This is essential for simulating current state of the art \ac{bp} protocols.
+
+\subsection{OPS}
+
+\ac{ops} is a simulator developed by the \href{https://www.uni-bremen.de/comnets}{Sustainable Communication Networks} of the \href{https://www.uni-bremen.de/}{University of Bremen}. It sits on top of \ac{omnet} and \ac{inet}, which are powerful event and network simulation frameworks. This allows \ac{ops} to be very flexible, extendable, and powerful.
+
+\ac{ops} makes the distinction between link (convergence layer), routing and the app layer. These are separate components that allow for realistic simulations for \ac{bp}. Each layer is configurable with a lot of parameters to tune.
+
+Most routing algorithms are available out of the box, and it is the only project in this list that has support for 3D space / coordinates.
+
+It is the only simulator on this list that seems to be actively maintained and developed at this moment. The documentation is the most comprehensive in comparison to the other projects, but it only covers the basic features without going into details too much. Some examples/guides would be great. The setup is not easy, as \ac{ops} is made up of many software projects bundled together and takes a bit to get up and running.
+
+\subsection{ns3-dtn-bit}
+
+ns3-dtn-bit is based on \ac{ns3}, which is another network simulation framework. Unfortunately, ns3-dtn-bit seems more of a proof of concept than a real simulator.
+
+It misses config driven scenarios, only implements \ac{cgr} and is not customizable. The convergence layer is not simulated here, only the routing, which makes it unsuitable for simulating \ac{bp}.
+
+Also, the documentation is extremely limited.
+
+\subsection{dtnsim}
+
+dtnsim is a pure python implementation of a \ac{dtn} simulator. This makes it unsuitable for large scale simulations, as python performance will be a hindrance.
+
+dtnsim includes routing protocols like PRoPHET and Epidemic, but not the underlying simulation of the convergence layer, unfortunately. This, again, makes it unsuitable for simulating \ac{bp}.
+
+There is no documentation beyond reading the source code. Being in written in python lowers the barrier of entry for new users, but this is still not a real option for simulating diverse scenarios.
+Scenarios are not config driven and require coding to be defined.
+Also, the simulation environment is 2D.
+
+\subsection{DTN}
+
+Originally written as a master thesis \footnote{\url{https://raw.githubusercontent.com/szymonwieloch/DTN/master/DTN.pdf}}, DTN is quite a complete simulator.
+
+It is aware of the convergence layer and includes \ac{tcp}, \ac{udp} and \ac{lldp}. Also, it includes most of the common routing protocols, including Static, Epidemic, Gradient, AODV, Dijkstra and Predictable.
+It was written with the first draft of the \ac{bp} protocol in mind \cite{RFC5050}, so is specifically tailored for \ac{bp} simulations.
+
+Documentation is difficult tu judge as it's not in English. Overall, this is the most mature simulator which is backed by a single person. Although, it's not maintained and/or developed anymore.
+
+\section{Conclusion}
+
+Below is a short summary of the key differences between the simulators that were considered. \ref{table:comparison}
+
+\begin{table}[h!]
+  \centering
+  \label{table:comparison}
+  \begin{tabular}{c | c c c}
+    Simulator   & Convergence Layer & Config driven & Maintained \\
+    \hline
+    The One     & \XSolid           & \Checkmark    & \XSolid    \\
+    OPS         & \Checkmark        & \Checkmark    & \Checkmark \\
+    ns3-dtn-bit & \XSolid           & \XSolid       & \XSolid    \\
+    dtnsim      & \XSolid           & \XSolid       & \XSolid    \\
+    DTN         & \Checkmark        & \Checkmark    & \XSolid    \\
+  \end{tabular}
+  \caption{Comparison of the simulators}
+\end{table}
+
+Most simulators have some kind of shortcomings. Almost all of them lack in documentation and examples, which implies a higher barrier of entry for new users.
+The most complete, up-to-date and flexible simulator seems to be \ac{ops}, which seems the most mature and reasonable choice to simulate \ac{dtn} in the present day.
+
+All other simulators seem unmaintained at this point or lack support for convergence layer simulations.

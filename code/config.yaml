@@ -1,0 +1,20 @@
+nodes:
+  iperf-server:
+    image: test
+    command: ["iperf3", "--server", "--one-off"]
+
+  iperf-client:
+    image: test
+    command: ["iperf3", "--client", "iperf-server", "--time", "10"]
+
+  ping-server:
+    image: test
+  ping-client:
+    image: test
+    command: ["ping", "ping-server"]
+
+events:
+  - type: network
+    connect:
+      - iperf-client
+      - iperf-server

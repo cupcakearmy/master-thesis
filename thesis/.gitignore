@@ -1,0 +1,17 @@
+# Own
+*.pdf
+!images/*.pdf
+
+# Common
+.vscode
+*.log
+
+# Tex
+*.aux
+*.pyg
+*.toc
+*.lof
+*.lot
+*.xml
+*.bbl
+*-blx.bib

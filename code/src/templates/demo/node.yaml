@@ -1,0 +1,11 @@
+apiVersion: iluzio.nicco.io/v1
+kind: Node
+metadata:
+  name: b
+spec:
+  image: idle
+  resources:
+    limits:
+      memory: '128Mi'
+      cpu: '500m'
+      ephemeral-storage: '4Gi'

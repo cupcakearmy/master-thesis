@@ -1,0 +1,110 @@
+kind: NetworkChaos
+apiVersion: chaos-mesh.org/v1alpha1
+metadata:
+  namespace: simulator
+  name: test
+spec:
+  selector:
+    namespaces:
+      - simulator
+    labelSelectors:
+      node: a
+  mode: all
+  action: bandwidth
+  direction: to
+  target:
+    selector:
+      namespaces:
+        - simulator
+      labelSelectors:
+        node: b
+    mode: all
+  bandwidth:
+    rate: 10mbps
+    limit: 2000000000
+    buffer: 200000
+  delay:
+    latency: 50ms
+    correlation: '25'
+    jitter: 25ms
+  # loss:
+  #   loss: '1'
+  # duplicate:
+  #   duplicate: '1'
+  # corrupt:
+  #   corrupt: '1'
+# ---
+# kind: NetworkChaos
+# apiVersion: chaos-mesh.org/v1alpha1
+# metadata:
+#   namespace: simulator
+#   name: link-a-b
+# spec:
+#   selector:
+#     namespaces:
+#       - simulator
+#     labelSelectors:
+#       node: a
+#   mode: all
+#   action: partition
+#   direction: to
+#   target:
+#     selector:
+#       namespaces:
+#         - simulator
+#       labelSelectors:
+#         node: b
+#     mode: all
+# ---
+# kind: NetworkChaos
+# apiVersion: chaos-mesh.org/v1alpha1
+# metadata:
+#   namespace: simulator
+#   name: test
+# spec:
+#   selector:
+#     namespaces:
+#       - simulator
+#     labelSelectors:
+#       node: a
+#   mode: all
+#   action: delay
+#   delay:
+#     latency: 10ms
+#     correlation: '0'
+#     jitter: 1ms
+#   direction: both
+#   target:
+#     selector:
+#       namespaces:
+#         - simulator
+#       labelSelectors:
+#         node: b
+#     mode: all
+
+# ---
+# kind: NetworkChaos
+# apiVersion: chaos-mesh.org/v1alpha1
+# metadata:
+#   namespace: simulator
+#   name: band-b
+# spec:
+#   selector:
+#     namespaces:
+#       - simulator
+#     labelSelectors:
+#       node: a
+#   mode: all
+#   action: bandwidth
+#   bandwidth:
+#     rate: 10mbps
+#     limit: 2000000000
+#     buffer: 1500
+#   direction: both
+#   target:
+#     selector:
+#       namespaces:
+#         - simulator
+#       labelSelectors:
+#         node: b
+#     mode: all

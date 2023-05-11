@@ -1,0 +1,34 @@
+\chapter{Introduction}
+
+\subsubsection{Background and Motivation}
+
+As \acl{dtn} is becoming a focus in recent research, the need for adequate tooling is rising accordingly. While not in its infancy, research around \ac{dtn} has mainly been conducted by space agencies and therefore the ecosystem for open tools is still lacking.
+
+In order to further research and develop \ac{dtn} and the related protocols, we require a way to evaluate and simulate different protocols in different scenarios involving different network topologies.
+
+As in any field of science, measurement is a necessary step in assessing whether a newly developed technology is an actual improvement or not compared to the existing state of affairs. This means that metrics are needed to evaluate progress. Generally, experimental evidence and measurements are used to gather data.
+
+However, in DTN the scale of the network is often on a planetary level, which makes actual testing very resource intensive and in most cases impossible. With simulations, it is possible to gather metrics and data without the need to launch actual hardware into space. Running simulations of the network manually without automation is a time-consuming and error-prone process, as it involves plenty of moving parts to be done correctly. Keeping an overview and correcting behaviour manually is not a feasible task, which can be solved by using a simulator. Additionally, simulators give reproducibility, which is key when comparing between different protocols as the environments will be exactly the same across multiple tests and runs.
+
+Simulations, by comparison, require very little resources. Therefore, they can be used not only to evaluate, but also can be integrated into the development process of DTN protocols. This can accelerate the development process and makes comparison between different protocols and implementations much easier and efficient.
+
+\subsubsection{Aims of this work}
+
+There are pre-existing simulators for such a task, but they are not well-suited to our needs, as will be discussed later.
+
+This work aims at developing a tool that should allow for dynamic, deterministic and chaotic simulations with varying numbers of participants, each with different capabilities.
+Every part of the tool should be driven by configuration files and be definable by the user in a readable and flexible way.
+
+To achieve the level of granular control and dynamic flexibility, this work proposes to have a Controller-Node architecture, where the Controller is the main brain of the simulation while the nodes are freely configurable. The programming of the nodes should be language-agnostic so that they can be programmed on their own, giving them a high degree of freedom. The controller, on the other hand, would orchestrate the simulation and networking that has to be done.
+
+The controller would run the simulation according to the spec and provide all the data needed to evaluate the run. Such data will include information about topology changes, network activity between each node. Different collectors / ingest systems could be proposed in addition to log file or test run file.
+
+\subsubsection{Outline of this work}
+
+After this introduction, there will be a chapter on the fundamentals of \ac{dtn} which we require to understand what kind of tool we need. Then we will suggest requirements for the tool that will be derived from use cases that need to be considered and are desirable.
+
+Next, the current state-of-the-art will be analysed and explored to see what tools are presently available, what are their capabilities and where they are lacking in terms of needed functionality.
+
+Finally, we will propose a more concrete concept for our tool and its subsystems and parts that we want to achieve.
+
+After implementation, there will be a chapter that will analyse what was accomplished and go over the requirements postulated beforehand to evaluate how the tool performs. Furthermore, it will look at what might be improved and what could be done in the future to further enhance it.

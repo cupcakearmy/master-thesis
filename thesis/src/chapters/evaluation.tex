@@ -1,0 +1,601 @@
+\chapter{Evaluation}
+
+This chapter will focus on evaluating the results of this work.
+The first section will look at the basic building blocks of the simulator and how they behave.
+
+\section{Basic building blocks}
+
+The following basic functionality will be tested singularly:
+
+\begin{enumerate}
+  \item Bandwidth
+  \item Delay
+  \item Loss
+  \item Jitter
+  \item Unidirectionality
+\end{enumerate}
+
+For each of these, a test will be performed to see how the simulator behaves. The tests will be performed on a single Kubernetes node, and between two simulation nodes (name=\verb|a|,\verb|b|). This minimized the number of variables that could affect the results.
+The tests were run on an Apple M1 Pro with 32GB of RAM on a local installation of Kubernetes in Minikube.
+Additionally, the nodes request a full CPU thread to ensure enough computing power is available. The image used for the nodes is \verb|idle|, which is a minimal image with a few network tools installed, but no other functionality.
+The configuration of the simulation nodes is as follows:
+
+\begin{minted}{yaml}
+apiVersion: iluzio.nicco.io/v1
+kind: Node
+metadata:
+  name: a
+spec:
+  image: idle
+  resources:
+    requests:
+      memory: '256Mi'
+      cpu: '1000m'
+\end{minted}
+
+To avoid confusion in the write-up, the following abbreviations will be used:
+
+\begin{itemize}
+  \item \verb|ip-a|: The IP address of the node with the name \verb|a|.
+  \item \verb|ip-b|: The IP address of the node with the name \verb|b|.
+\end{itemize}
+
+
+\subsection{Bandwidth}
+
+\subsubsection{Methodology}
+
+For this test, one node will be sending a stream of data to the other node. For measuring the bandwidth, \verb|iperf3|\footnote{\url{https://iperf.fr/}} was chosen, as it is a well-known tool for that purpose. The bandwidth will be measured in both directions, as the bandwidth is not necessarily the same in both directions.
+
+On the receiving side, the following command will be used.
+
+\begin{minted}{bash}
+iperf3 -s 
+\end{minted}
+
+On the sending side, the following command will be used.
+The \verb|-Z| flag will enable the zero-copy mode, which will reduce the overhead of the network stack.
+The \verb|--bidir| flag will make the test run in both directions.
+The \verb|-t| flag will set the duration of the test to 30 seconds.
+
+\begin{minted}{bash}
+iperf3 -c ip-b -Z --bidir -t 30
+\end{minted}
+
+\subsubsection{Results}
+
+% Table with rate, limit, buffer, a->b, b->a
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|l|r|r|c|c|c|}
+    \cline{4-6}
+    \multicolumn{3}{c|}{} & \multicolumn{2}{c|}{Bidirectional} & Unidirectional                                                                                                             \\
+    \hline
+    Rate                  & Limit                              & Buffer         & a→b                               & b→a                               & a→b                               \\
+    \hline\hline
+
+    1kbps                 & 20000                              & 5000           & \textit{error}                    & \textit{error}                    & \SI{13,7}{\kibi\byte\per\second}  \\ \hline
+    50kbps                & 20000                              & 5000           & \SI{63,4}{\kibi\byte\per\second}  & \SI{62,25}{\kibi\byte\per\second} & \SI{55,4}{\kibi\byte\per\second}  \\ \hline
+    500kbps               & 20000                              & 5000           & \SI{495,5}{\kibi\byte\per\second} & \SI{497}{\kibi\byte\per\second}   & \SI{506,5}{\kibi\byte\per\second} \\ \hline
+    1mbps                 & 2000000000                         & 100000         & \SI{1,016}{\mebi\byte\per\second} & \SI{1,001}{\mebi\byte\per\second} & \SI{1,13}{\mebi\byte\per\second}  \\ \hline
+    50mbps                & 2000000000                         & 100000         & \SI{50,03}{\mebi\byte\per\second} & \SI{50,02}{\mebi\byte\per\second} & \SI{50,45}{\mebi\byte\per\second} \\ \hline
+    500mbps               & 2000000000                         & 100000         & \SI{498,0}{\mebi\byte\per\second} & \SI{497,5}{\mebi\byte\per\second} & \SI{498,5}{\mebi\byte\per\second} \\ \hline
+    1gbps                 & 2000000000                         & 100000         & \SI{1,01}{\gibi\byte\per\second}  & \SI{1,01}{\gibi\byte\per\second}  & \SI{1,01}{\gibi\byte\per\second}  \\ \hline
+    5gbps                 & 2000000000                         & 100000         & \SI{4,32}{\gibi\byte\per\second}  & \SI{4,34}{\gibi\byte\per\second}  & \SI{4,68}{\gibi\byte\per\second}  \\ \hline
+    10gbps                & 2000000000                         & 100000         & \SI{2,145}{\gibi\byte\per\second} & \SI{4,38}{\gibi\byte\per\second}  & \SI{8,445}{\gibi\byte\per\second} \\ \hline
+    10gbps                & 2000000000                         & 100000000      & \SI{1,21}{\gibi\byte\per\second}  & \SI{9,905}{\gibi\byte\per\second} & \SI{10,3}{\gibi\byte\per\second}  \\ \hline
+    No limit              & -                                  & -              & \SI{1,19}{\gibi\byte\per\second}  & \SI{9,98}{\gibi\byte\per\second}  & \SI{26,1}{\gibi\byte\per\second}  \\ \hline
+  \end{tabular}
+  \caption{Bandwidth test results}
+  \label{table:evaluation-bandwidth}
+\end{table}
+
+Low values (50kbps and below) seem not to cause trouble, especially the test run with 1kbps. This could be either due to `iperf3` not handling low bit rates properly or the NetworkChaos implementation.
+
+High values are limited by the CPU of the machine, as the CPU is unable to keep up with the high bandwidth and the connection starts to favor one direction over the other in the higher bandwidths.
+
+For the other tests, the results seem very accurate and usable.
+
+\subsection{Delay}
+
+\subsubsection{Methodology}
+
+The delay, or latency, of the link will be tested using the ping\footnote{\url{https://man.archlinux.org/man/ping.8.en}} utility.
+Each run will use the \verb|-i| flag to set the interval between each packet to 1 second.
+The \verb|-c| flag will set the number of packets to 10.
+The \verb|-W| flag will set the timeout to 1 minute for the longer tests.
+
+The command used to test the delay is as follows.
+
+\begin{minted}{bash}
+ping -i 1 -c 10 ip-b
+\end{minted}
+
+The link used for this test is as follows.
+
+\begin{minted}{bash}
+apiVersion: iluzio.nicco.io/v1
+kind: Link
+metadata:
+  name: test-link
+spec:
+  from: a
+  to: b
+  direction: bi
+  delay:
+    latency: 1ms
+    correlation: '0'
+    jitter: 0ms
+\end{minted}
+
+\subsubsection{Results}
+
+% Table with latency and result
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|l|r|r|c|c|c|}
+    \hline
+    Latency                 & Results for rrt (min/avg/max/mdev) in \si{\milli\second} \\
+    \hline\hline
+    No limit                & 0.035/0.052/0.088/0.017                                  \\ \hline
+    \SI{0,1}{\milli\second} & 0.305/0.384/0.609/0.109                                  \\ \hline
+    \SI{0,5}{\milli\second} & 1.111/1.173/1.283/0.062                                  \\ \hline
+    \SI{1}{\milli\second}   & 2.095/2.152/2.263/0.058                                  \\ \hline
+    \SI{2}{\milli\second}   & 4.083/4.166/4.538/0.126                                  \\ \hline
+    \SI{5}{\milli\second}   & 10.102/10.811/11.572/0.657                               \\ \hline
+    \SI{50}{\milli\second}  & 100.086/100.379/100.956/0.360                            \\ \hline
+    \SI{100}{\milli\second} & 200.143/200.970/201.766/0.676                            \\ \hline
+    \SI{500}{\milli\second} & 1000.145/1001.746/1004.690/1.589                         \\ \hline
+    \SI{1}{\second}         & 2000.088/2000.782/2002.136/0.769                         \\ \hline
+    \SI{30}{\second}        & 60000.596/60002.181/60004.193/1.499                      \\ \hline
+    \SI{1}{\minute}         & 120000.491/120001.342/120002.965/1.148                   \\ \hline
+  \end{tabular}
+  \caption{Delay test results}
+  \label{table:evaluation-delay}
+\end{table}
+
+\subsection{Packet loss}
+
+\subsubsection{Methodology}
+
+This test will be conducted using the ping utility, as it can measure packet loss.
+The \verb|-i| flag will be used to set the interval between each packet to 0.02 second.
+The \verb|-c| flag will be used to set the number of packets to 200.
+The link will be unidirectional, as otherwise it would measure the probability of a packet being lost in both directions.
+
+The command used to test the packet loss is as follows.
+
+\begin{minted}{bash}
+  ping ip-b -i 0.02 -c 200
+\end{minted}
+
+The link used for this test is as follows.
+
+\begin{minted}{bash}
+apiVersion: iluzio.nicco.io/v1
+kind: Link
+metadata:
+  name: test-link
+spec:
+  from: a
+  to: b
+  direction: uni
+  loss:
+    loss: '1'
+\end{minted}
+
+\subsubsection{Results}
+
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|l|r|}
+    \hline
+    Loss Rate    & Measured \\
+    \hline\hline
+    No loss rate & 0\%      \\ \hline
+    1            & 1.5\%    \\ \hline
+    2            & 3\%      \\ \hline
+    5            & 6\%      \\ \hline
+    10           & 12.5\%   \\ \hline
+    25           & 25\%     \\ \hline
+    50           & 43.5\%   \\ \hline
+    75           & 74.5\%   \\ \hline
+    100          & 100\%    \\ \hline
+  \end{tabular}
+  \caption{Packet loss test results}
+  \label{table:evaluation-packet-loss}
+\end{table}
+
+\subsection{Jitter}
+
+\subsubsection{Methodology}
+
+This test will be conducted using the iperf3 utility.
+When using the \verb|-u| flag, iperf3 will use \ac{udp} and measure the jitter.
+This test will be conducted in both directions.
+
+The command used to test the jitter is as follows.
+
+\begin{minted}{bash}
+# Receiving node
+iperf3 -s
+
+# Sending node
+iperf3 -c ip-b -u -t 30
+\end{minted}
+
+The link used for this test is as follows.
+
+\begin{minted}{bash}
+apiVersion: iluzio.nicco.io/v1
+kind: Link
+metadata:
+  name: test-link
+spec:
+  from: a
+  to: b
+  direction: bi
+  delay:
+    latency: 10ms
+    jitter: 5ms
+\end{minted}
+
+\subsubsection{Results}
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|l|l|r|}
+    \hline
+    Latency                 & Jitter                 & Measured                   \\
+    \hline\hline
+    -                       & -                      & \SI{0.035}{\milli\second}  \\ \hline
+    \SI{10}{\milli\second}  & \SI{1}{\milli\second}  & \SI{0.757}{\milli\second}  \\ \hline
+    \SI{10}{\milli\second}  & \SI{2}{\milli\second}  & \SI{1.342}{\milli\second}  \\ \hline
+    \SI{10}{\milli\second}  & \SI{2}{\milli\second}  & \SI{1.342}{\milli\second}  \\ \hline
+    \SI{10}{\milli\second}  & \SI{5}{\milli\second}  & \SI{3.093}{\milli\second}  \\ \hline
+    \SI{50}{\milli\second}  & \SI{10}{\milli\second} & \SI{6.713}{\milli\second}  \\ \hline
+    \SI{50}{\milli\second}  & \SI{25}{\milli\second} & \SI{17.589}{\milli\second} \\ \hline
+    \SI{100}{\milli\second} & \SI{50}{\milli\second} & \SI{35.315}{\milli\second} \\ \hline
+  \end{tabular}
+  \caption{Jitter test results}
+  \label{table:evaluation-jitter}
+\end{table}
+
+Unfortunately, these results are not very accurate.
+This means that when running simulations, jitter should be considered more of a guideline than an exact value.
+
+
+\subsection{Unidirectionality}
+
+\subsubsection{Methodology}
+
+This test will be performed by connecting the two nodes to each other with a unidirectional link. Then, using the netcat utility, a stream of data will be sent from one node to the other. The stream will be using \ac{udp}, as \ac{tcp} requires a connection to be established, which is not possible with a unidirectional link.
+
+The commands used to test the unidirectionality are as follows.
+
+\begin{minted}{bash}
+# Receiving node
+nc -ul 1234
+
+# Sending node
+nc -u ip-b 1234
+\end{minted}
+
+The link used for this test is as follows.
+
+\begin{minted}{bash}
+apiVersion: iluzio.nicco.io/v1
+kind: Link
+metadata:
+name: test-link
+spec:
+from: a
+to: b
+direction: uni
+\end{minted}
+
+\subsection{Results}
+
+Before creating the link, no packets can be sent or received by both nodes.
+After creating the link, \verb|a| can send packets to \verb|b|, but not the other way around.
+
+\section{Goals}
+
+Requirements were introduced at the beginning of this work \ref{section:requirements}. Through running different scenarios, it could be seen which requirements were met, which not, and which were partially achieved.
+
+The scenarios ran were inspired by the use cases postulated in the previous section \ref{section:scenarios}. The actual scenarios were slightly different, to make testing quicker. Especially the time frames were shortened, without affecting functionality.
+
+\section{Procedure}
+
+\subsection{Scenario A}
+
+This scenario borrows from the first use case described in the requirements' chapter \ref{section:scenarios}. It is a simple scenario, where two base stations are modelled, alongside a single satellite. The satellite is connected to the ground stations at different times, with some overlap.
+
+The ground stations are supposed to gather data from the satellite, and provide an interface for the satellite to get the current time. The satellite is supposed to send a message to the ground stations about a measurement it took and then fetch the time. It will try to accomplish this every second.
+
+Both ground stations share the same docker image \verb|base-station|, as they are functionally identically. The satellite uses a different image \verb|satellite|, as it has different functionality. Both images are built as simple Node\footnote{\url{https://nodejs.org/en}} applications for simplicity. The applications are then packaged into docker images, available for the cluster.
+
+The full source code for the applications and the scenario resource can be found under \verb|scenarios/one-sat-two-base|. An excerpt of the ground station application is shown in \ref{listing:scenario-a-ground-station}.
+
+\begin{listing}[H]
+  \begin{minted}{js}
+app.post('/transmit', async (request) => {
+  request.log.info({ data: request.body })
+})
+
+app.get('/time', async () => {
+  return new Date().toISOString()
+})
+
+await app.listen({ port: 3000, host: '0.0.0.0' })
+\end{minted}
+  \caption{Ground station application}
+  \label{listing:scenario-a-ground-station}
+\end{listing}
+
+Below is a snippet of the satellite application \ref{listing:scenario-a-satellite}. It makes use of the \verb|sidecar| to discover the ground stations. If it finds any, it will send a message, and fetch the time from set ground station. If no ground stations are found, it will idle.
+
+\begin{listing}[H]
+  \begin{minted}{js}
+const ips = await fetch('http://localhost:42069/discoverable')
+  .then((res) => res.json())
+  .catch(() => [])
+
+if (!ips.length) {
+  logger.info('no peers found')
+  return
+}
+
+for (const ip of ips) {
+  fetch(`http://${ip}:3000/time`)
+    .then((res) => res.text())
+    .then((time) => logger.info({ peer: ip }, `time from peer: ${time}`))
+    .catch(logger.error)
+  fetch(`http://${ip}:3000/transmit`, {
+    method: 'POST',
+    body: `Observation: ${Math.random()
+  }` }).catch(logger.error)
+}
+\end{minted}
+  \caption{Satellite application}
+  \label{listing:scenario-a-satellite}
+\end{listing}
+
+For the timeline of the simulation, the following events were defined:
+
+\begin{enumerate}
+  \item Create a base-station with the name \verb|base0| at time $t=0$.
+  \item Create a base-station with the name \verb|base1| $t=0$.
+  \item Create a satellite with the name \verb|sat0| $t=0$.
+  \item Create a bidirectional \SI{10}{\mebi\byte\per\second} link between \verb|sat0| and \verb|base0| $t=15$.
+  \item Create a bidirectional \SI{1}{\mebi\byte\per\second} link between \verb|sat0| and \verb|base1| $t=30$.
+  \item Delete the link between \verb|sat0| and \verb|base0| $t=45$.
+  \item Delete the link between \verb|sat0| and \verb|base1| $t=60$.
+  \item End the simulation $t=80$.
+\end{enumerate}
+
+The resulting scenario file is shown below \ref{listing:scenario-a-scenario}.
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{yaml}
+apiVersion: iluzio.nicco.io/v1
+kind: Scenario
+metadata:
+  name: sat-base
+spec:
+  events:
+    # Setup
+    - offset: 0
+      resource: node
+      action: create
+      id: base0
+      spec:
+        image: base-station
+        airGapped: false
+
+    - offset: 0
+      resource: node
+      action: create
+      id: base1
+      spec:
+        image: base-station
+
+    - offset: 0
+      resource: node
+      action: create
+      id: sat0
+      spec:
+        image: satellite
+
+    # Links
+    - offset: 15
+      resource: link
+      action: create
+      from: base0
+      to: sat0
+      direction: bi
+      spec:
+        bandwidth:
+          rate: 10mbps
+          limit: 2000000000
+          buffer: 200000
+
+    - offset: 45
+      resource: link
+      action: delete
+      from: base0
+      to: sat0
+      direction: bi
+
+    - offset: 30
+      resource: link
+      action: create
+      from: base1
+      to: sat0
+      direction: bi
+      spec:
+        bandwidth:
+          rate: 1mbps
+          limit: 2000000000
+          buffer: 200000
+
+    - offset: 60
+      resource: link
+      action: delete
+      from: base1
+      to: sat0
+      direction: bi
+
+    # End
+    - offset: 80
+      resource: scenario
+      action: end
+\end{minted}
+  \caption{Scenario A}
+  \label{listing:scenario-a-scenario}
+\end{listing}
+
+The simulation was run with the following command:
+
+\begin{minted}{bash}
+kubectl apply -f scenarios/one-sat-two-base/scenario.yaml
+\end{minted}
+
+As soon as the resource is created, the controller starts the daemon and execution begins. As expected, all steps were executed as planned. The logs of the satellite are shown in \ref{listing:scenario-a-logs-sat}.
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{json}
+{"level":30,"time":1680545308548,"msg":"no peers found"}
+{"level":30,"time":1680545309415,"msg":"no peers found"}
+// ...
+{"level":30,"time":1680545319423,"msg":"no peers found"}
+{"level":30,"time":1680545320432,"msg":"no peers found"}
+// Connecting to base0
+{"level":30,"time":1680545321430,"peer":"10.244.120.91","msg":"time from peer: 2023-04-03T18:08:41.426Z"}
+{"level":30,"time":1680545322426,"peer":"10.244.120.91","msg":"time from peer: 2023-04-03T18:08:42.424Z"}
+// ...
+{"level":30,"time":1680545334448,"peer":"10.244.120.91","msg":"time from peer: 2023-04-03T18:08:54.447Z"}
+{"level":30,"time":1680545335449,"peer":"10.244.120.91","msg":"time from peer: 2023-04-03T18:08:55.449Z"}
+// Connecting to both ground stations
+{"level":30,"time":1680545336456,"peer":"10.244.120.91","msg":"time from peer: 2023-04-03T18:08:56.454Z"}
+{"level":30,"time":1680545336461,"peer":"10.244.120.89","msg":"time from peer: 2023-04-03T18:08:56.458Z"}
+// ...
+{"level":30,"time":1680545348478,"peer":"10.244.120.89","msg":"time from peer: 2023-04-03T18:09:08.476Z"}
+{"level":30,"time":1680545348478,"peer":"10.244.120.91","msg":"time from peer: 2023-04-03T18:09:08.477Z"}
+{"level":30,"time":1680545349481,"peer":"10.244.120.91","msg":"time from peer: 2023-04-03T18:09:09.480Z"}
+// Disconnecting from one ground station base0
+{"level":30,"time":1680545349481,"peer":"10.244.120.89","msg":"time from peer: 2023-04-03T18:09:09.480Z"}
+{"level":30,"time":1680545350483,"peer":"10.244.120.89","msg":"time from peer: 2023-04-03T18:09:10.482Z"}
+// ...
+{"level":30,"time":1680545364510,"peer":"10.244.120.89","msg":"time from peer: 2023-04-03T18:09:24.509Z"}
+{"level":30,"time":1680545365547,"peer":"10.244.120.89","msg":"time from peer: 2023-04-03T18:09:25.546Z"}
+// Disconnecting from both
+{"level":30,"time":1680545366509,"msg":"no peers found"}
+{"level":30,"time":1680545367512,"msg":"no peers found"}
+// ...
+\end{minted}
+  \caption{Logs of the satellite}
+  \label{listing:scenario-a-logs-sat}
+\end{listing}
+
+A snippet of the logs of the ground station base0 is shown in \ref{listing:scenario-a-logs-base0}.
+The ground station base1 is not shown here, but the logs are similar.
+
+\begin{listing}[H]
+  \begin{minted}[fontsize=\scriptsize]{json}
+{"level":30,"time":1680545307882,"msg":"Server listening at http://0.0.0.0:3000"}
+{"level":30,"time":1680545321426,"reqId":"req-1","req":{
+  "method":"GET","url":"/time",
+  "hostname":"10.244.120.91:3000",
+  "remoteAddress":"10.244.120.90",
+  "remotePort":46546
+},"msg":"incoming request"}
+{"level":30,"time":1680545321429,"reqId":"req-1","res":{
+  "statusCode":200},
+  "responseTime":2.900707997381687,
+  "msg":"request completed"
+}
+{"level":30,"time":1680545321430,"reqId":"req-2","req":{
+  "method":"POST",
+  "url":"/transmit",
+  "hostname":"10.244.120.91:3000",
+  "remoteAddress":"10.244.120.90",
+  "remotePort":46558},
+  "msg":"incoming request"
+}
+{"level":30,"time":1680545321430,"reqId":"req-2","data":"Observation: 0.34461038383534204"}
+{"level":30,"time":1680545321430,"reqId":"req-2","res":{
+  "statusCode":200},
+  "responseTime":0.9071250036358833,
+  "msg":"request completed"
+}
+  \end{minted}
+  \caption{Logs of the ground station base0}
+  \label{listing:scenario-a-logs-base0}
+\end{listing}
+
+\section{Interpretation}
+
+The scenario tested here is a simple one, but it shows the potential of the simulator.
+Based on these results, the following table shows which requirements have been fulfilled.
+"Yes" means that the requirement has been fully fulfilled, "Partially" means that the requirement has been fulfilled to a certain degree, and "No" means that the requirement has not been fulfilled.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|l|c|}
+    \hline
+    Requirement  & Fulfilled \\
+    \hline\hline
+    \reqitem{1}  & Yes       \\ \hline
+    \reqitem{2}  & Yes       \\ \hline
+    \reqitem{3}  & Yes       \\ \hline
+    \reqitem{4}  & Yes       \\ \hline
+    \reqitem{5}  & Yes       \\ \hline
+    \reqitem{6}  & Yes       \\ \hline
+    \reqitem{7}  & Yes       \\ \hline
+    \reqitem{8}  & Partially \\ \hline
+    \reqitem{9}  & Partially \\ \hline
+    \reqitem{10} & Yes       \\ \hline
+    \reqitem{11} & Yes       \\ \hline
+    \reqitem{12} & Yes       \\ \hline
+  \end{tabular}
+  \caption{Requirements overview}
+  \label{table:interpretation-requirementes}
+\end{table}
+
+Most of the requirements have been fulfilled completely. Unfortunately, the requirements \reqitem{8} and \reqitem{9}, while having the bulk of the functionality, miss some features. These are discussed in the following section.
+
+The controller managed to orchestrate all moving parts inside of the cluster successfully by using the event-driven architecture of the operator. Apart from some initial errors during development, the control loop quickly became very stable and reliable, giving it a high degree of confidence. It manages to handle multiple simulations at the same time, and can be easily extended to support more complex scenarios.
+
+\section{Critical considerations}
+
+While this work should act as a solid foundation for future work, there are some critical aspects that should be discussed and taken into consideration.
+
+\subsection{Requirement \reqitem{8}}
+
+The requirement \reqitem{8} states that it should be possible to create, delete or modify links while the simulation is running. Creation and deletion of links works as expected, however modifying links is not possible in a straightforward way. This is due to limitations of the NetworkChaos CRD of Chaos Mesh\footnote{\url{https://chaos-mesh.org/docs/run-a-chaos-experiment/\#update-chaos-experiments-using-commands}}.
+
+This limitation, however, can be circumvented by deleting and recreating the link with the new parameters. While this approach is not ideal, it allows to alter properties of a link while running a scenario. The main downside is that the link will be down for a brief moment, or experience weird behaviour while one link is deleted and another one is created.
+
+\subsection{Requirement \reqitem{9}}
+
+This shortcoming might be the most critical one. The requirement \reqitem{9} requires the simulation to support bandwidth, latency, packet-loss, jitter. While the simulator supports all of these, it does not support them at the same time. Specifically it is not possible to limit the bandwidth in combination with other faults. All, non-bandwidth faults, can be used simultaneously. For simulating real links this is a limitation. The root cause is a bug in the NetworkChaos framework\footnote{\url{https://github.com/chaos-mesh/chaos-mesh/issues/3631}} that overwrites the underlying tc rules when using bandwidth limits. It has been acknowledged by the Chaos Mesh team that this is not ideal behaviour, and should be addressed.
+Time was spent trying to identifying the issue, and while a possible culprit was found\footnote{\url{https://github.com/chaos-mesh/chaos-mesh/blob/14c3b515ce9eb52457cea83d93cb4697bc2aec8e/controllers/podnetworkchaos/controller.go\#L232-L256}}, it was ultimately outside the scope of this work to fix it.
+
+\subsection{Logging}
+
+It would be beneficial to have a unified logging interface for the simulator. This would allow to more easily gather all information needed to evaluate a simulation.
+One possible solution would be to add a logging endpoint to the sidecar.
+This would allow for simple access to the running image, which then could easily integrate own metrics and events into the logging system.
+
+\section{Future work}
+
+Some optional features that could be added to the simulator in the future are shown below.
+
+\begin{itemize}
+  \item A potential online editor for creating the scenarios.
+  \item Support more fault types provided by Chaos Mesh.
+  \item Distribute the operator either as Python package, docker image or helm chart.
+\end{itemize}
